@@ -189,6 +189,36 @@ jobs:
           gh release upload vpn-config "$HOME/vpn/config.txt" --clobber
 
       # ---------------------------------------------------------------
+      # 4b. Mirror the plain-text config to the live-config branch
+      #     (single commit, force-pushed each cycle - no history spam).
+      #     Current URI: .../raw/live-config/config.txt
+      # ---------------------------------------------------------------
+      - name: Mirror config to live-config branch
+        continue-on-error: true
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+        run: |
+          set -euo pipefail
+          . "$HOME/vpn/env"
+          URI="vless://${UUID}@${HOST}:443?encryption=none&security=tls&sni=${HOST}&type=ws&host=${HOST}&path=%2F${WS_PATH#/}#ArenaVPN"
+          cd "$HOME/vpn"
+          rm -rf mirror && mkdir mirror && cd mirror
+          git init -q
+          git config user.name "vpn-loop"
+          git config user.email "vpn-loop@users.noreply.github.com"
+          git remote add origin "https://x-access-token:${GH_TOKEN}@github.com/${GH_REPO}.git"
+          git checkout -q -B live-config
+          if git fetch -q --depth=1 origin live-config 2>/dev/null; then
+            git reset -q --hard FETCH_HEAD
+          fi
+          printf '%s\n' "${URI}" > config.txt
+          git add config.txt
+          git commit -q -m "config $(date -u +%FT%TZ)" || echo "no change"
+          git push -q -f origin live-config
+          echo "Mirrored to ${GH_REPO}@live-config:config.txt"
+
+      # ---------------------------------------------------------------
       # 5. Serve for 5h25m, then hand over to the queued run.
       #    (GitHub hard-kills jobs at 6h; we leave plenty of margin.)
       # ---------------------------------------------------------------
