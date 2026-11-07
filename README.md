@@ -1,18 +1,31 @@
-# My-small-project — VPN Loop
+# My-small-project — VPN Loop (v2rayNG, free Cloudflare tunnel)
 
 A free, always-on VPN/proxy for **v2rayNG** built out of GitHub Actions +
 Cloudflare tunnels. No server to rent, no ports to open, unlimited minutes
 (public repo) — and the workflow restarts itself before the 6-hour job cap.
 
-## How it works
+## Latency honesty (read first)
+
+This runs Xray on a **GitHub-hosted runner in a US Azure region**:
 
 ```
-v2rayNG  ──TLS/WS──►  Cloudflare edge (trycloudflare.com)
-                              │ cloudflared quick tunnel (outbound only)
-                              ▼
-                     GitHub Actions runner
-                     └── xray-core : VLESS + WebSocket, port 18888
+v2rayNG (Tehran) ──TLS/WS──► Cloudflare edge (trycloudflare.com)
+                                   │ cloudflared quick tunnel (outbound only)
+                                   ▼
+                          GitHub Actions runner (US)
+                          └── xray-core : VLESS + WebSocket, port 18888
 ```
+
+GitHub-hosted runners cannot be placed outside the US, so Tehran → US RTT
+alone is typically **150–250+ ms**. A **sub-200 ms proxy RTT from Tehran is
+not plausible on this path**, no matter how the config is tuned. I have **not**
+run a Tehran-side test, and I am not promising the target.
+
+This is the free zero-cost option. If you need <200 ms, you would need egress
+closer to Tehran (e.g. a low-cost VPS in Istanbul or Frankfurt) — that is not
+what this repo deploys.
+
+## How it works
 
 1. Run starts → **first step queues the next run** (it sits *pending* thanks
    to the `vpn-loop` concurrency group).

@@ -1,14 +1,20 @@
 name: VPN Loop
 
-# Self-chaining VPN tunnel (Xray VLESS+WS behind a Cloudflare quick tunnel).
+# Self-chaining VPN tunnel (Xray VLESS+WebSocket behind a Cloudflare quick tunnel).
 #
-# - workflow_dispatch : start the loop manually
+# - workflow_dispatch : start the loop manually from the Actions tab
 # - schedule          : safety net, revives the loop if the chain ever breaks
 # - repository_dispatch (type: vpn-loop) : revive via API
 #
 # The FIRST step queues the next run. With the concurrency group below, that
 # run sits "pending" until this one finishes (~5h25m), then takes over. Runs
 # hand over to each other forever -> the tunnel effectively never dies.
+#
+# NOTE ON LATENCY FROM TEHRAN: this runs Xray on a GitHub-hosted runner in a US
+# Azure region. Tehran -> US RTT alone is typically 150-250+ ms, so a sub-200 ms
+# proxy RTT from Tehran is NOT plausible on this path no matter how the config is
+# tuned. This is the free zero-cost option. For <200 ms you would need egress
+# closer to Tehran (e.g. Istanbul/Frankfurt VPS), which this repo does not use.
 
 on:
   workflow_dispatch:
@@ -24,8 +30,8 @@ permissions:
 concurrency:
   group: vpn-loop
   # A repository_dispatch "kick" cancels whatever runs/pends and restarts the
-  # loop fresh (emergency reset). All other events queue politely and take
-  # over when the current run finishes -> the self-chaining handover.
+  # loop fresh (emergency reset). All other events queue politely and take over
+  # when the current run finishes -> the self-chaining handover.
   cancel-in-progress: ${{ github.event_name == 'repository_dispatch' }}
 
 jobs:
