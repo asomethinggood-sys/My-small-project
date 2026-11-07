@@ -47,6 +47,11 @@ v2rayNG  ──TLS/WS──►  Cloudflare edge (trycloudflare.com)
 |---|---|
 | `.github/workflows/vpn.yml` | The self-chaining tunnel loop |
 
+The plain-text `vless://` URI of the **current** tunnel is also force-pushed to
+the [`live-config` branch](https://github.com/asomethinggood-sys/My-small-project/blob/live-config/config.txt)
+every cycle (single commit, always current):
+`https://raw.githubusercontent.com/asomethinggood-sys/My-small-project/live-config/config.txt`
+
 ## Notes
 
 - The hostname is a random `*.trycloudflare.com` quick-tunnel URL and it
