@@ -3,7 +3,7 @@
 **Goal, not a result:** below 200 ms from Tehran when routing permits it.
 The existing US GitHub runner reportedly exceeds 350 ms. That is a user report,
 not a measurement made by this project. **No Tehran-side measurements or live VPS
-deployment have been performed for this change. No working endpoint is supplied.**
+deployment have been performed for this change. Temporary runner-side experiments are documented below; no permanent endpoint is supplied.**
 
 ## No VPS budget? Start here
 

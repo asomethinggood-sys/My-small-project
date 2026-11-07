@@ -147,6 +147,7 @@ def prepare():
                     print(f'::warning title=Early-data probe failed::{mode}: baseline remains available', flush=True)
 
             except (RuntimeError, subprocess.CalledProcessError) as exc:
+                ready = [uri for uri in ready if not urlsplit(uri).fragment.startswith(f'Experiment-{mode}')]
                 results[mode] = {'functional': False, 'error': str(exc)}
                 print(f'{mode}: {exc}', flush=True)
                 print(f'::warning title=Failed experiment transport::{mode}: {exc}', flush=True)
@@ -155,6 +156,8 @@ def prepare():
                 if client is not None:
                     stop(client)
         (OUT / 'results.json').write_text(json.dumps(results, indent=2))
+        if origin.poll() is not None:
+            raise RuntimeError('Origin exited before profiles could be exported')
         if not ready:
             raise RuntimeError('Neither candidate passed; no profiles exported')
         body = '\n'.join(ready) + '\n'

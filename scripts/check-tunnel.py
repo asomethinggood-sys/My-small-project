@@ -13,11 +13,17 @@ p.add_argument('host')
 p.add_argument('uuid')
 p.add_argument('path')
 p.add_argument('xray')
+p.add_argument('--early-data', choices=['true', 'false'], default='false')
 args = p.parse_args()
 with tempfile.TemporaryDirectory() as tmp:
     directory = Path(tmp)
     (directory / 'identity.json').write_text(json.dumps({'host': args.host, 'uuid': args.uuid, 'path': args.path}))
     generate(args.host, directory)
+    if args.early_data == 'true':
+        config_file = directory / 'client-test.json'
+        config = json.loads(config_file.read_text())
+        config['outbounds'][0]['streamSettings']['wsSettings']['path'] += '?ed=2048'
+        config_file.write_text(json.dumps(config))
     with (directory / 'client.log').open('w') as log:
         client = subprocess.Popen([args.xray, 'run', '-c', str(directory / 'client-test.json')], stdout=log, stderr=log)
     try:

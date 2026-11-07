@@ -56,16 +56,8 @@ jobs:
           set -euo pipefail
           mkdir -p "$HOME/vpn" "$HOME/bin"
 
-          echo "Downloading Xray-core..."
-          curl -fsSL -o /tmp/xray.zip \
-            https://github.com/XTLS/Xray-core/releases/latest/download/Xray-linux-64.zip
-          unzip -qo /tmp/xray.zip -d "$HOME/bin"
-          chmod +x "$HOME/bin/xray"
-
-          echo "Downloading cloudflared..."
-          curl -fsSL -o "$HOME/bin/cloudflared" \
-            https://github.com/cloudflare/cloudflared/releases/latest/download/cloudflared-linux-amd64
-          chmod +x "$HOME/bin/cloudflared"
+          bash scripts/download-binaries.sh "$HOME/bin" --xray-only
+          bash scripts/download-cloudflared.sh "$HOME/bin"
 
           "$HOME/bin/xray" version
           "$HOME/bin/cloudflared" --version
@@ -78,6 +70,7 @@ jobs:
       - name: Start Xray and Cloudflare tunnel
         env:
           CF_TRANSPORT: ${{ vars.CF_TRANSPORT || 'auto' }}
+          WS_EARLY_DATA: ${{ vars.WS_EARLY_DATA || 'false' }}
         run: |
           set -euo pipefail
 
@@ -142,7 +135,7 @@ jobs:
             echo "URL=${URL}"
           } > "$HOME/vpn/env"
 
-          python3 scripts/check-tunnel.py "$HOST" "$UUID" "$WS_PATH" "$HOME/bin/xray"
+          python3 scripts/check-tunnel.py "$HOST" "$UUID" "$WS_PATH" "$HOME/bin/xray" --early-data "$WS_EARLY_DATA"
           echo "Tunnel passed runner-side functional test: ${URL}"
 
       # ---------------------------------------------------------------
@@ -155,11 +148,18 @@ jobs:
           GH_TOKEN: ${{ github.token }}
           GH_REPO: ${{ github.repository }}
           CF_TRANSPORT: ${{ vars.CF_TRANSPORT || 'auto' }}
+          WS_EARLY_DATA: ${{ vars.WS_EARLY_DATA || 'false' }}
         run: |
           set -euo pipefail
           . "$HOME/vpn/env"
 
-          URI="vless://${UUID}@${HOST}:443?encryption=none&security=tls&sni=${HOST}&type=ws&host=${HOST}&path=%2F${WS_PATH#/}#ArenaVPN"
+          EARLY_DATA_SUFFIX=""
+          case "$WS_EARLY_DATA" in
+            true) EARLY_DATA_SUFFIX='%3Fed%3D2048' ;;
+            false) ;;
+            *) echo 'Invalid WS_EARLY_DATA'; exit 1 ;;
+          esac
+          URI="vless://${UUID}@${HOST}:443?encryption=none&security=tls&sni=${HOST}&type=ws&host=${HOST}&path=%2F${WS_PATH#/}${EARLY_DATA_SUFFIX}#ArenaVPN"
 
           echo "VPN URI:"
           echo "${URI}"
@@ -167,7 +167,7 @@ jobs:
 
           {
             echo "## VPN config for v2rayNG"
-            echo "Connector transport setting: ${CF_TRANSPORT} (not a Tehran latency result)."
+            echo "Connector transport: ${CF_TRANSPORT}; WS early data: ${WS_EARLY_DATA} (not a Tehran latency result)."
             echo
             echo "**Option A - import from clipboard** (v2rayNG: + -> Import from clipboard):"
             echo

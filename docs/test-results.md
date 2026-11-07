@@ -1,5 +1,54 @@
 # Validation record — 2026-11-07
 
+## Follow-up: no-cost experiment (supersedes initial execution limitations)
+
+The task branch was committed and pushed, then real GitHub-hosted tests ran.
+The existing main-branch VPN job, repository variables and public subscription
+were **not** modified. No VPS was purchased or deployed.
+
+- [Validation run 42410877108](https://github.com/asomethinggood-sys/My-small-project/actions/runs/42410877108): **passed**. Seven unit tests, shell syntax, pinned
+  binary checksums, Xray server/client config validation, Caddy adaptation and
+  the local SOCKS -> VLESS/WS -> HTTP integration round trip passed.
+- Earlier integration runs failed because Xray v26.10.31 defaults to blocking
+  private-address egress on VLESS inbounds. Debug logs identified this precisely.
+  The fixture now allows only its own loopback address and ephemeral HTTP port;
+  deployed configs retain the upstream protection. The failures were not hidden.
+- [Transport run 42410877096](https://github.com/asomethinggood-sys/My-small-project/actions/runs/42410877096): **passed**. Both QUIC and HTTP/2 connectors, with and
+  without client WS early data, passed real public TLS/WS/VLESS egress probes.
+  Profiles from that smoke run have expired. Android import remains untested.
+
+### Measured: GitHub runner, NOT Tehran
+
+Cold HTTPS requests to `https://example.com/` through each candidate. Five samples
+per candidate, taken sequentially on one runner. Runner region was not independently
+verified; these timings must not be labelled Tehran RTT or user delay.
+
+| Connector | WS early data | Successes | Median HTTP total ms | p95 ms |
+|---|---|---:|---:|---:|
+| QUIC | off | 5/5 | 283.8 | 374.1 |
+| QUIC | on | 5/5 | 226.2 | 256.6 |
+| HTTP/2 | off | 5/5 | 412.0 | 481.2 |
+| HTTP/2 | on | 5/5 | 327.6 | 364.3 |
+
+Early data was associated with lower cold-request times in this small run, but
+sequential sampling, destination variability and two different tunnel hostnames
+prevent a general causal/performance conclusion. An earlier baseline-only run
+42410694349 measured ~138 ms medians for both transports, illustrating substantial
+run-to-run variability. Do **not** choose a Tehran transport or claim <200 ms from
+these numbers. `auto` and early-data-off remain defaults until client testing.
+
+Full logs/artifacts could not be downloaded into this sandbox because GitHub
+redirects them to storage hosts outside its allowlist. Run/job results and the
+explicitly labelled timing annotations were retrieved through the GitHub API.
+Users can open the runs and download the one-day artifacts normally.
+
+The initial record below is retained for transparency; its 'not pushed / not run'
+statements describe only the previous turn, not the current test status.
+
+---
+
+## Initial implementation record
+
 ## Observed / executed
 
 - Initial branch: `arena/f056ce38-my-small-project`, clean working tree, based on
