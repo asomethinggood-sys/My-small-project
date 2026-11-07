@@ -59,6 +59,12 @@ gh workflow run experiment.yml --ref arena/f056ce38-my-small-project -f minutes=
 gh run list --workflow experiment.yml --branch arena/f056ce38-my-small-project --limit 5
 ```
 
+You can also use **Actions -> Tunnel transport experiment -> Run workflow**,
+select this branch and 30 minutes. If your account cannot see a Run workflow
+button for a workflow not yet on the default branch, merge the reviewed workflow
+through your normal process first. The agent's manual dispatch was denied by
+GitHub with HTTP 403; no live window was started on your behalf.
+
 Open the new run. Wait for the preparation/verification step to pass. During the
 bounded test window, copy the `VERIFIED FROM RUNNER ONLY` URI lines in that step's
 log, or download the `experiment-RUN_ID` artifact as soon as its upload completes:

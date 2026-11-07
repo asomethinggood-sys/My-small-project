@@ -37,6 +37,31 @@ prevent a general causal/performance conclusion. An earlier baseline-only run
 run-to-run variability. Do **not** choose a Tehran transport or claim <200 ms from
 these numbers. `auto` and early-data-off remain defaults until client testing.
 
+### Final implementation recheck
+
+At commit `4dcafb5`, [validation 42410999696](https://github.com/asomethinggood-sys/My-small-project/actions/runs/42410999696)
+and [experiment 42410999663](https://github.com/asomethinggood-sys/My-small-project/actions/runs/42410999663)
+both **passed**. All four variants again had 5/5 successful measured requests.
+These were again **GitHub-runner cold HTTP totals, not Tehran measurements**:
+
+| Connector | WS early data | Median ms | p95 ms |
+|---|---|---:|---:|
+| QUIC | off | 89.9 | 93.6 |
+| QUIC | on | 70.5 | 133.8 |
+| HTTP/2 | off | 83.5 | 92.9 |
+| HTTP/2 | on | 77.4 | 88.6 |
+
+Importantly, QUIC early data improved the median in this screening but **worsened
+p95**. The tiny sample and large between-run variation do not justify a universal
+winner or changing defaults. These observations are a reason to collect Tehran
+samples, not to claim the <200 ms goal has been achieved.
+
+A manual dispatch of a 30-minute client test window was attempted but rejected
+with `HTTP 403: Resource not accessible by integration`. Push-triggered tests
+were permitted; manual dispatch permission was not. No permissions or repository
+variables were altered to bypass this. The user can dispatch from Actions with
+their own authorized account. All smoke-test profiles are expired.
+
 Full logs/artifacts could not be downloaded into this sandbox because GitHub
 redirects them to storage hosts outside its allowlist. Run/job results and the
 explicitly labelled timing annotations were retrieved through the GitHub API.
