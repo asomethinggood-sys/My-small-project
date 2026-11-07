@@ -142,6 +142,50 @@ force-pushes). Previously published assets/mirrors can be stale. Branch test run
 do not overwrite the shared subscription. This change has not cancelled any
 existing main-branch runs or changed remote repository settings.
 
+## Triggering the loop after review and merge
+
+There are **two different tokens** involved. The agent's GitHub App token may
+lack permission to call `workflow_dispatch`. The workflow's own `GITHUB_TOKEN`
+has `actions: write` and queues its successor independently. An agent-side 403
+does not establish that the in-workflow self-chain is broken. Do not repeatedly
+retry an agent-side permission denial.
+
+After the changes are reviewed and merged, set repository **Actions variable**
+`ENABLE_FREE_TUNNEL=true` for a permitted loop test (Settings -> Secrets and
+variables -> Actions -> Variables). Otherwise the job intentionally skips, even
+if a dispatch is accepted. Leave `CF_TRANSPORT=auto` and `WS_EARLY_DATA=false`
+until your client comparison supports changing them.
+
+From an authorized environment with repository `contents: write` permission:
+
+```bash
+gh api -X POST repos/asomethinggood-sys/My-small-project/dispatches -f event_type=vpn-loop
+```
+
+A successful request returns **HTTP 204 with no response body**. The workflow
+already declares `repository_dispatch: types: [vpn-loop]`. This event runs the
+**default-branch** workflow, not this task branch. Before merge it would start
+old main-branch code, so it is not a way to validate the proposed changes.
+This event is an emergency kick: its concurrency policy cancels an active run
+in that workflow's concurrency group and interrupts connected users.
+
+Alternatively, an authorized repository user can open **GitHub -> Actions ->
+VPN Loop -> Run workflow**, select the merged default branch, and run it.
+Manual workflow dispatch is enabled. The job's successor step continues using
+its own `GITHUB_TOKEN` to dispatch the same ref before the six-hour limit.
+
+An accepted API request is **not** evidence of successful deployment. Inspect
+Actions: the job must not be skipped, the Xray config validation and full
+TLS/WS/VLESS probe must pass, and the publication step must succeed. Only then
+retrieve the newly published config. A fresh Tehran-side v2rayNG test is still
+required for availability and latency. Do not use expired experiment artifacts.
+
+**PR gate requested by the user:** no PR is opened while the proposed latency
+settings remain only experimental. Functional config validation passed, but
+there is no verified Tehran result or currently live optimized profile. Keep
+that distinction explicit; do not describe the experimental options as a proven
+upgrade. No repository dispatch or main-branch change was made for this check.
+
 ## Validation
 
 ```bash
