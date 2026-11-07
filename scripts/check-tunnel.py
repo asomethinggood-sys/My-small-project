@@ -13,6 +13,7 @@ p.add_argument('host')
 p.add_argument('uuid')
 p.add_argument('path')
 p.add_argument('xray')
+p.add_argument('--attempts', type=int, choices=range(1, 61), default=12)
 p.add_argument('--early-data', choices=['true', 'false'], default='false')
 args = p.parse_args()
 with tempfile.TemporaryDirectory() as tmp:
@@ -27,7 +28,7 @@ with tempfile.TemporaryDirectory() as tmp:
     with (directory / 'client.log').open('w') as log:
         client = subprocess.Popen([args.xray, 'run', '-c', str(directory / 'client-test.json')], stdout=log, stderr=log)
     try:
-        for _ in range(12):
+        for _ in range(args.attempts):
             time.sleep(2)
             if client.poll() is not None:
                 raise SystemExit('Probe client exited; refusing to publish')

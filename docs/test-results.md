@@ -131,3 +131,20 @@ inspect the result before deployment. The validation job does not host a VPN.
    and certificate renewal state persists. Test shared load/transfer quotas.
 5. Fill in actual measurements and state their exact metric; only claim the
    target for the tested ISP/time/conditions and demonstrated statistics.
+
+
+## Stable Worker relay implementation (subsequent turn)
+
+- `node --test tests/worker.test.mjs`: **9 passed**, using an in-memory KV mock
+  and mocked outbound responses. Covers route validation/lease expiry, update
+  authentication, size limits, persistence across requests, exact path gating,
+  WebSocket/early-data header forwarding, sensitive-header stripping, redirect
+  rejection, backend failure and the Cloudflare entrypoint signature.
+- Python suite: **9 passed**, including bounded route-update leases, destination
+  validation and consistency of the fixed public identity/Worker path. Workflow YAML and embedded Bash syntax
+  checks passed locally. CI now includes the Node unit tests.
+- The Worker is **not deployed by the agent**. No Cloudflare deployment permission,
+  KV binding or shared update secret has been supplied. No live Worker relay,
+  Android import, rotation or Tehran measurement has been performed.
+- `RELAY_ENABLED` remains opt-in. No main-branch run or repository settings were
+  changed. No PR was opened for the unverified Worker path.

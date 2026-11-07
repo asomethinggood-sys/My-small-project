@@ -5,6 +5,14 @@ The existing US GitHub runner reportedly exceeds 350 ms. That is a user report,
 not a measurement made by this project. **No Tehran-side measurements or live VPS
 deployment have been performed for this change. Temporary runner-side experiments are documented below; no permanent endpoint is supplied.**
 
+## Stable Worker address (setup pending)
+
+The proposed relay for **bih.asomethinggood.workers.dev** is prepared in
+[`worker/worker.mjs`](worker/worker.mjs). Follow the
+[three setup steps](docs/worker-relay.md) to deploy the code, bind KV and save a
+shared update secret. It is **not yet live-tested or enabled**, and no working
+stable config is claimed. The existing connection remains unchanged.
+
 ## No VPS budget? Start here
 
 Use the [bounded no-cost QUIC vs HTTP/2 experiment](docs/free-experiment.md).

@@ -69,6 +69,7 @@ jobs:
       # ---------------------------------------------------------------
       - name: Start Xray and Cloudflare tunnel
         env:
+          RELAY_ENABLED: ${{ vars.RELAY_ENABLED || 'false' }}
           CF_TRANSPORT: ${{ vars.CF_TRANSPORT || 'auto' }}
           WS_EARLY_DATA: ${{ vars.WS_EARLY_DATA || 'false' }}
         run: |
@@ -77,6 +78,16 @@ jobs:
           case "$CF_TRANSPORT" in auto|quic|http2) ;; *) echo 'Invalid CF_TRANSPORT'; exit 1;; esac
           UUID="$(cat /proc/sys/kernel/random/uuid)"
           WS_PATH="/$(tr -d '-' < /proc/sys/kernel/random/uuid)"
+          case "$RELAY_ENABLED" in
+            true)
+              # Public/shared profile identity: intentionally stable across runner rotations.
+              mapfile -t PROFILE < <(python3 -c 'import json; p=json.load(open("worker/profile.json")); print(p["uuid"]); print(p["path"])')
+              UUID="${PROFILE[0]}"
+              WS_PATH="${PROFILE[1]}"
+              ;;
+            false) ;;
+            *) echo 'Invalid RELAY_ENABLED'; exit 1 ;;
+          esac
           PORT=18888
 
           cat > "$HOME/vpn/config.json" <<JSON
@@ -138,6 +149,21 @@ jobs:
           python3 scripts/check-tunnel.py "$HOST" "$UUID" "$WS_PATH" "$HOME/bin/xray" --early-data "$WS_EARLY_DATA"
           echo "Tunnel passed runner-side functional test: ${URL}"
 
+      - name: Update stable Worker route and verify VLESS through it
+        if: vars.RELAY_ENABLED == 'true' && github.ref_name == github.event.repository.default_branch
+        env:
+          RELAY_UPDATE_TOKEN: ${{ secrets.RELAY_UPDATE_TOKEN }}
+          WS_EARLY_DATA: ${{ vars.WS_EARLY_DATA || 'false' }}
+        run: |
+          set -euo pipefail
+          . "$HOME/vpn/env"
+          python3 scripts/update-relay.py "$HOST"
+          RELAY_HOST="$(python3 -c 'import json; print(json.load(open("worker/profile.json"))["host"])')"
+          # KV can serve the previous mapping for 60s or more at other locations.
+          # This probe retries; failure prevents publication, not silently falling back.
+          python3 scripts/check-tunnel.py "$RELAY_HOST" "$UUID" "$WS_PATH" "$HOME/bin/xray" --early-data "$WS_EARLY_DATA" --attempts 40
+          echo "HOST=$RELAY_HOST" >> "$HOME/vpn/env"
+
       # ---------------------------------------------------------------
       # 4. Publish the v2rayNG config: clipboard URI + auto-refreshing
       #    subscription URL (release asset, overwritten every cycle).
@@ -147,6 +173,7 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
           GH_REPO: ${{ github.repository }}
+          RELAY_ENABLED: ${{ vars.RELAY_ENABLED || 'false' }}
           CF_TRANSPORT: ${{ vars.CF_TRANSPORT || 'auto' }}
           WS_EARLY_DATA: ${{ vars.WS_EARLY_DATA || 'false' }}
         run: |
@@ -182,7 +209,12 @@ jobs:
             echo '```'
             echo
             echo "This tunnel lasts at most 5h25m. Handover interrupts active sessions."
-            echo "Refresh the subscription after rotation (automatic refresh depends on client settings)."
+            if [ "$RELAY_ENABLED" = true ]; then
+              echo "Stable Worker profile: same hostname, UUID and path after rotation."
+              echo "Existing sessions still disconnect; KV propagation can delay reconnection."
+            else
+              echo "Refresh the subscription after rotation (automatic refresh depends on client settings)."
+            fi
           } >> "$GITHUB_STEP_SUMMARY"
 
           # Subscription body = base64(vless URI), what v2rayNG expects.
