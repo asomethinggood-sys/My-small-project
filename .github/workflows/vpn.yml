@@ -1,24 +1,20 @@
 name: VPN Loop
 
-# Xray VLESS + WebSocket + TLS for v2rayNG.
+# Self-chaining VPN tunnel (Xray VLESS+WebSocket behind a Cloudflare quick tunnel).
 #
-# Two deployment modes:
-#   * VPS mode (RECOMMENDED for the <200 ms from Tehran goal):
-#     Xray runs on a low-cost VPS close to Tehran (Istanbul or Frankfurt).
-#     GitHub Actions runs only the control plane: it generates a fresh Xray
-#     config each cycle, deploys it to the VPS over SSH (secrets never touch
-#     this repo), restarts the Xray systemd service, and publishes the
-#     vless:// URI. The data plane no longer touches the US GitHub runner,
-#     which removes the Tehran -> US transatlantic leg (typically 150-250+ ms
-#     RTT on its own).
-#   * Free mode (FALLBACK): the original Cloudflare quick tunnel on a US
-#     GitHub-hosted runner. Zero cost, but <200 ms from Tehran is NOT
-#     plausible on this path; it is kept for users who cannot run a VPS.
+# - workflow_dispatch : start the loop manually from the Actions tab
+# - schedule          : safety net, revives the loop if the chain ever breaks
+# - repository_dispatch (type: vpn-loop) : revive via API
 #
-# The FIRST step always queues the next run before doing anything else, so
-# runs hand over every ~5h25m (under GitHub's 6h job cap) and the tunnel
-# effectively never dies. schedule + repository_dispatch revive the loop if a
-# dispatch ever fails.
+# The FIRST step queues the next run. With the concurrency group below, that
+# run sits "pending" until this one finishes (~5h25m), then takes over. Runs
+# hand over to each other forever -> the tunnel effectively never dies.
+#
+# NOTE ON LATENCY FROM TEHRAN: this runs Xray on a GitHub-hosted runner in a US
+# Azure region. Tehran -> US RTT alone is typically 150-250+ ms, so a sub-200 ms
+# proxy RTT from Tehran is NOT plausible on this path no matter how the config is
+# tuned. This is the free zero-cost option. For <200 ms you would need egress
+# closer to Tehran (e.g. Istanbul/Frankfurt VPS), which this repo does not use.
 
 on:
   workflow_dispatch:
@@ -33,12 +29,13 @@ permissions:
 
 concurrency:
   group: vpn-loop
-  # A repository_dispatch "kick" restarts the loop fresh; everything else
-  # queues politely and takes over when the current run finishes.
+  # A repository_dispatch "kick" cancels whatever runs/pends and restarts the
+  # loop fresh (emergency reset). All other events queue politely and take over
+  # when the current run finishes -> the self-chaining handover.
   cancel-in-progress: ${{ github.event_name == 'repository_dispatch' }}
 
 jobs:
-  vpn:
+  tunnel:
     runs-on: ubuntu-latest
     timeout-minutes: 355
     steps:
@@ -52,8 +49,8 @@ jobs:
         run: |
           set -uo pipefail
           for attempt in 1 2 3 4 5; do
-            if gh workflow run vpn.yml --ref "${{ github.ref }}"; then
-              echo "Next run queued (attempt ${attempt}) on ${{ github.ref }}."
+            if gh workflow run vpn.yml --ref "${{ github.event.repository.default_branch }}"; then
+              echo "Next run queued (attempt ${attempt})."
               exit 0
             fi
             echo "Dispatch failed (attempt ${attempt}), retrying in 20s..."
@@ -62,135 +59,9 @@ jobs:
           echo "::warning::Could not queue the next run; the cron schedule will revive the loop."
 
       # ---------------------------------------------------------------
-      # 2. Choose deployment mode: VPS (recommended) or free fallback.
+      # 2. Install Xray-core and cloudflared.
       # ---------------------------------------------------------------
-      - name: Choose deployment mode
-        id: mode
-        run: |
-          if [ -n "${{ secrets.VPS_SSH_KEY }}" ]; then
-            echo "mode=vps" >> "$GITHUB_OUTPUT"
-            echo "VPS mode: Xray will run on ${HOST} as ${USER}." \
-              HOST="${{ secrets.VPS_HOST }}" USER="${{ secrets.VPS_USER }}"
-          else
-            echo "mode=free" >> "$GITHUB_OUTPUT"
-            echo "::warning::VPS_SSH_KEY secret is not set -> falling back to the free Cloudflare quick tunnel on a US GitHub runner. <200 ms from Tehran is NOT plausible on this path."
-          fi
-
-      # ---------------------------------------------------------------
-      # 3a. VPS MODE: generate Xray config + self-signed TLS cert, then
-      #     deploy to the VPS over SSH and run Xray as a systemd service.
-      # ---------------------------------------------------------------
-      - name: Generate config and deploy Xray to VPS (VPS mode)
-        if: steps.mode.outputs.mode == 'vps'
-        env:
-          VPS_HOST: ${{ secrets.VPS_HOST }}
-          VPS_USER: ${{ secrets.VPS_USER }}
-        run: |
-          set -euo pipefail
-
-          UUID="$(cat /proc/sys/kernel/random/uuid)"
-          WS_PATH="/$(tr -d '-' < /proc/sys/kernel/random/uuid)"
-
-          HOST="${VPS_HOST:?VPS_HOST secret is required}"
-          USER="${VPS_USER:-root}"
-          KEY="$HOME/vps_key"
-          mkdir -p "$HOME/vpn" "$HOME/.ssh"
-          chmod 700 "$HOME/.ssh"
-          printf '%s' "${{ secrets.VPS_SSH_KEY }}" > "$KEY"
-          chmod 600 "$KEY"
-          ssh-keyscan -H "$HOST" >> "$HOME/.ssh/known_hosts" 2>/dev/null || true
-          SSH="ssh -i \"$KEY\" -o StrictHostKeyChecking=accept-new -o BatchMode=yes -o ServerAliveInterval=30 \"${USER}@${HOST}\""
-
-          # Self-signed certificate. v2rayNG connects with allowInsecure=1
-          # (this project is not security-hardened - see README).
-          openssl req -x509 -newkey rsa:2048 -nodes \
-            -keyout "$HOME/vpn/key.pem" -out "$HOME/vpn/cert.pem" \
-            -subj "/CN=${HOST}" -days 365 >/dev/null 2>&1
-
-          cat > "$HOME/vpn/config.json" <<JSON
-          {
-            "log": {"loglevel": "warning"},
-            "inbounds": [{
-              "listen": "0.0.0.0",
-              "port": 443,
-              "protocol": "vless",
-              "settings": {
-                "clients": [{"id": "${UUID}"}],
-                "decryption": "none"
-              },
-              "streamSettings": {
-                "network": "ws",
-                "security": "tls",
-                "tlsSettings": {
-                  "certificate": "/etc/xray-vpn/cert.pem",
-                  "keyFile": "/etc/xray-vpn/key.pem"
-                },
-                "wsSettings": {"path": "${WS_PATH}"}
-              }
-            }],
-            "outbounds": [{"protocol": "freedom"}]
-          }
-          JSON
-
-          python3 -m json.tool "$HOME/vpn/config.json" > /dev/null
-          echo "Xray config OK."
-
-          # Install Xray-core on the VPS (idempotent) and drop in config.
-          $SSH "
-            set -e
-            if ! command -v xray >/dev/null 2>&1; then
-              echo \"Installing Xray-core on ${HOST}...\"
-              curl -fsSL -o /tmp/xray.zip \\
-                https://github.com/XTLS/Xray-core/releases/latest/download/Xray-linux-64.zip
-              unzip -o -q /tmp/xray.zip -d /usr/local/bin xray
-              chmod +x /usr/local/bin/xray
-            fi
-            mkdir -p /etc/xray-vpn
-          "
-
-          scp -i "$KEY" -o StrictHostKeyChecking=accept-new -o BatchMode=yes \
-            "$HOME/vpn/config.json" "$HOME/vpn/cert.pem" "$HOME/vpn/key.pem" \
-            "${USER}@${HOST}:/etc/xray-vpn/"
-
-          cat > "$HOME/vpn/xray-vpn.service" <<UNIT
-          [Unit]
-          Description=Xray VLESS+WebSocket+TLS (VPN Loop)
-          After=network.target
-
-          [Service]
-          Type=simple
-          User=root
-          WorkingDirectory=/etc/xray-vpn
-          ExecStart=/usr/local/bin/xray run -c /etc/xray-vpn/config.json
-          Restart=always
-          RestartSec=3
-          LimitNOFILE=1048576
-
-          [Install]
-          WantedBy=multi-user.target
-          UNIT
-
-          scp -i "$KEY" -o StrictHostKeyChecking=accept-new -o BatchMode=yes \
-            "$HOME/vpn/xray-vpn.service" "${USER}@${HOST}:/etc/systemd/system/xray-vpn.service"
-
-          $SSH "systemctl daemon-reload && systemctl enable --now xray-vpn && systemctl restart xray-vpn"
-          $SSH "systemctl is-active --quiet xray-vpn && ss -ltnp | grep -qE ':443 ' || { echo '::error::Xray is not listening on :443'; exit 1; }"
-
-          {
-            echo "UUID=${UUID}"
-            echo "HOST=${HOST}"
-            echo "WS_PATH=${WS_PATH}"
-            echo "MODE=vps"
-            echo "ENDPOINT=${HOST}:443"
-          } > "$HOME/vpn/env"
-
-          echo "Xray is live on ${HOST}:443 (WS path ${WS_PATH})"
-
-      # ---------------------------------------------------------------
-      # 3b. FREE MODE: original Cloudflare quick tunnel on the US runner.
-      # ---------------------------------------------------------------
-      - name: Install Xray-core and cloudflared (free mode)
-        if: steps.mode.outputs.mode == 'free'
+      - name: Install Xray-core and cloudflared
         run: |
           set -euo pipefail
           mkdir -p "$HOME/vpn" "$HOME/bin"
@@ -209,8 +80,12 @@ jobs:
           "$HOME/bin/xray" version
           "$HOME/bin/cloudflared" --version
 
-      - name: Start Xray and Cloudflare tunnel (free mode)
-        if: steps.mode.outputs.mode == 'free'
+      # ---------------------------------------------------------------
+      # 3. Start Xray (VLESS + WebSocket) and expose it via a Cloudflare
+      #    quick tunnel. No ports opened on the runner - cloudflared dials
+      #    out to Cloudflare's edge, and you connect to that edge hostname.
+      # ---------------------------------------------------------------
+      - name: Start Xray and Cloudflare tunnel
         run: |
           set -euo pipefail
 
@@ -272,8 +147,6 @@ jobs:
             echo "HOST=${HOST}"
             echo "WS_PATH=${WS_PATH}"
             echo "URL=${URL}"
-            echo "MODE=free"
-            echo "ENDPOINT=${HOST}"
           } > "$HOME/vpn/env"
 
           echo "Tunnel is live: ${URL}"
@@ -290,13 +163,7 @@ jobs:
           set -euo pipefail
           . "$HOME/vpn/env"
 
-          if [ "${MODE}" = "vps" ]; then
-            URI="vless://${UUID}@${HOST}:443?encryption=none&security=tls&sni=${HOST}&type=ws&host=${HOST}&path=%2F${WS_PATH#/}&allowInsecure=1#ArenaVPN-VPS"
-            CONNECT_LINE="Direct connection to ${ENDPOINT} (no Cloudflare hop). In v2rayNG turn on 'Allow Insecure' for the self-signed certificate."
-          else
-            URI="vless://${UUID}@${HOST}:443?encryption=none&security=tls&sni=${HOST}&type=ws&host=${HOST}&path=%2F${WS_PATH#/}#ArenaVPN"
-            CONNECT_LINE="Via Cloudflare quick tunnel ${URL}."
-          fi
+          URI="vless://${UUID}@${HOST}:443?encryption=none&security=tls&sni=${HOST}&type=ws&host=${HOST}&path=%2F${WS_PATH#/}#ArenaVPN"
 
           echo "VPN URI:"
           echo "${URI}"
@@ -320,11 +187,9 @@ jobs:
             echo "Current plain-text URI is also mirrored to"
             echo "\`https://raw.githubusercontent.com/${GH_REPO}/live-config/config.txt\`"
             echo
-            echo "${CONNECT_LINE}"
-            echo
-            echo "This config rotates every ~5h25m when the next run takes over with a"
-            echo "fresh UUID/path. Option B picks up the new URL automatically; with"
-            echo "Option A re-copy this page's URI after each restart."
+            echo "This tunnel serves traffic for **5h25m**, then the next queued run"
+            echo "takes over with a fresh URL. Option B picks up the new URL"
+            echo "automatically; with Option A re-copy this page's URI after each restart."
           } >> "$GITHUB_STEP_SUMMARY"
 
           # Subscription body = base64(vless URI), what v2rayNG expects.
@@ -338,6 +203,7 @@ jobs:
       # ---------------------------------------------------------------
       # 4b. Mirror the plain-text config to the live-config branch
       #     (single commit, force-pushed each cycle - no history spam).
+      #     Current URI: .../raw/live-config/config.txt
       # ---------------------------------------------------------------
       - name: Mirror config to live-config branch
         continue-on-error: true
@@ -347,11 +213,7 @@ jobs:
         run: |
           set -euo pipefail
           . "$HOME/vpn/env"
-          if [ "${MODE}" = "vps" ]; then
-            URI="vless://${UUID}@${HOST}:443?encryption=none&security=tls&sni=${HOST}&type=ws&host=${HOST}&path=%2F${WS_PATH#/}&allowInsecure=1#ArenaVPN-VPS"
-          else
-            URI="vless://${UUID}@${HOST}:443?encryption=none&security=tls&sni=${HOST}&type=ws&host=${HOST}&path=%2F${WS_PATH#/}#ArenaVPN"
-          fi
+          URI="vless://${UUID}@${HOST}:443?encryption=none&security=tls&sni=${HOST}&type=ws&host=${HOST}&path=%2F${WS_PATH#/}#ArenaVPN"
           cd "$HOME/vpn"
           rm -rf mirror && mkdir mirror && cd mirror
           git init -q
@@ -376,13 +238,7 @@ jobs:
         run: |
           set -euo pipefail
           . "$HOME/vpn/env"
-          if [ "${MODE}" = "vps" ]; then
-            echo "Xray keeps serving on ${ENDPOINT} (VPS) until handover at $(date -u -d '+5h25m' '+%H:%M:%S UTC')..."
-          else
-            echo "Serving ${URL} until $(date -u -d '+5h25m' '+%H:%M:%S UTC')..."
-          fi
+          echo "Serving ${URL} until $(date -u -d '+5h25m' '+%H:%M:%S UTC')..."
           sleep 19500
-          if [ "${MODE}" = "free" ]; then
-            kill "$(cat "$HOME/vpn/xray.pid")" "$(cat "$HOME/vpn/cloudflared.pid")" 2>/dev/null || true
-          fi
           echo "Handing over to the queued run."
+          kill "$(cat "$HOME/vpn/xray.pid")" "$(cat "$HOME/vpn/cloudflared.pid")" 2>/dev/null || true
