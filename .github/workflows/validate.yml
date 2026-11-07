@@ -23,4 +23,10 @@ jobs:
           .runtime/bin/xray run -test -c .runtime/client-test.json
           .runtime/bin/caddy adapt --config .runtime/Caddyfile --adapter caddyfile > /dev/null
       - name: Local VLESS WebSocket round trip (not Tehran latency)
-        run: python3 tests/integration.py
+        run: |
+          if ! python3 tests/integration.py > .runtime/integration.log 2>&1; then
+            cat .runtime/integration.log
+            python3 -c 'from pathlib import Path; s=Path(".runtime/integration.log").read_text()[-12000:]; print("::error title=Integration diagnostics::"+s.replace("%","%25").replace("\n","%0A").replace("\r","%0D"))'
+            exit 1
+          fi
+          cat .runtime/integration.log

@@ -101,14 +101,19 @@ def prepare():
                 uri = (directory / 'candidate-uri.txt').read_text().strip().replace('#Direct-VPS', f'#Experiment-{mode}')
                 ready.append(uri)
                 print(f'VERIFIED FROM RUNNER ONLY ({mode}): {uri}', flush=True)
-                subprocess.run([sys.executable, str(ROOT / 'scripts/measure.py'),
+                print(f'::notice title=Temporary runner-verified profile ({mode})::{uri}', flush=True)
+                measurement = subprocess.run([sys.executable, str(ROOT / 'scripts/measure.py'),
                     '--label', f'GitHub-runner-NOT-Tehran-{mode}', '--url', 'https://example.com/',
                     '--proxy', 'socks5h://127.0.0.1:10809', '--count', '5',
-                    '--output', str(OUT / f'{mode}-{time.time_ns()}.csv')], check=True)
+                    '--output', str(OUT / f'{mode}-{time.time_ns()}.csv')], check=True, capture_output=True, text=True)
+                print(measurement.stdout, flush=True)
+                first_line = measurement.stdout.splitlines()[0]
+                print(f'::notice title=Runner ONLY timing ({mode})::{first_line}', flush=True)
                 results[mode] = {'functional': True, 'host': host}
             except (RuntimeError, subprocess.CalledProcessError) as exc:
                 results[mode] = {'functional': False, 'error': str(exc)}
                 print(f'{mode}: {exc}', flush=True)
+                print(f'::warning title=Failed experiment transport::{mode}: {exc}', flush=True)
                 stop(tunnel)
             finally:
                 if client is not None:
