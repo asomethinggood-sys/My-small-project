@@ -36,6 +36,14 @@ v2rayNG  ──TLS/WS──►  Cloudflare edge (trycloudflare.com)
      rewritten each cycle, so a manual refresh keeps you connected forever.
 3. Stop it any time: **Actions** → *VPN Loop* → `…` → *Disable workflow*.
 
+### Kick / restart now
+
+To cancel whatever is running and start a fresh tunnel immediately (new URL):
+
+```bash
+gh api -X POST repos/asomethinggood-sys/My-small-project/dispatches -f event_type=vpn-loop
+```
+
 ## Repo requirements
 
 - **Public repo** (that's what makes Actions minutes unlimited).
