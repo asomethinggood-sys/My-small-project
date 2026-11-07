@@ -1,0 +1,47 @@
+name: Tunnel transport experiment
+on:
+  push:
+    paths:
+      - scripts/experiment.py
+      - scripts/download-cloudflared.sh
+      - .github/workflows/experiment.yml
+  workflow_dispatch:
+    inputs:
+      minutes:
+        description: Minutes to keep verified test profiles alive (no self-chain)
+        type: choice
+        options: ['5', '15', '30']
+        default: '15'
+permissions:
+  contents: read
+concurrency:
+  group: tunnel-experiment-${{ github.ref }}
+  cancel-in-progress: true
+jobs:
+  compare:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install pinned test binaries
+        run: |
+          bash scripts/download-binaries.sh
+          bash scripts/download-cloudflared.sh
+      - name: Start both transports and verify actual VLESS egress
+        run: python3 scripts/experiment.py --prepare
+      - name: Save verified profiles and diagnostics
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: experiment-${{ github.run_id }}
+          retention-days: 1
+          include-hidden-files: true
+          path: |
+            .runtime/experiment/*.txt
+            .runtime/experiment/*.json
+            .runtime/experiment/*.csv
+            .runtime/experiment/*.log
+      - name: Bounded Tehran test window (push smoke tests stop immediately)
+        env:
+          MINUTES: ${{ inputs.minutes || '0' }}
+        run: python3 scripts/experiment.py --serve-minutes "$MINUTES"

@@ -1,0 +1,26 @@
+name: Validate deployment
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - name: Unit tests and shell syntax
+        run: |
+          python3 -m unittest discover -s tests -v
+          for f in scripts/*.sh; do bash -n "$f"; done
+      - name: Validate with pinned server binaries (no deployment)
+        run: |
+          bash scripts/download-binaries.sh
+          python3 scripts/generate.py --host vpn.example.com
+          .runtime/bin/xray run -test -c .runtime/xray.json
+          .runtime/bin/xray run -test -c .runtime/client-test.json
+          .runtime/bin/caddy adapt --config .runtime/Caddyfile --adapter caddyfile > /dev/null
+      - name: Local VLESS WebSocket round trip (not Tehran latency)
+        run: python3 tests/integration.py

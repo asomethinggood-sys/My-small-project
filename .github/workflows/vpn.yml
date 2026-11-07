@@ -1,14 +1,7 @@
 name: VPN Loop
 
-# Self-chaining VPN tunnel (Xray VLESS+WS behind a Cloudflare quick tunnel).
-#
-# - workflow_dispatch : start the loop manually
-# - schedule          : safety net, revives the loop if the chain ever breaks
-# - repository_dispatch (type: vpn-loop) : revive via API
-#
-# The FIRST step queues the next run. With the concurrency group below, that
-# run sits "pending" until this one finishes (~5h25m), then takes over. Runs
-# hand over to each other forever -> the tunnel effectively never dies.
+# Optional legacy experiment. Set ENABLE_FREE_TUNNEL=true to run.
+# Handover changes the endpoint and interrupts sessions; not seamless uptime.
 
 on:
   workflow_dispatch:
@@ -22,7 +15,7 @@ permissions:
   contents: write
 
 concurrency:
-  group: vpn-loop
+  group: vpn-loop-${{ github.ref }}
   # A repository_dispatch "kick" cancels whatever runs/pends and restarts the
   # loop fresh (emergency reset). All other events queue politely and take
   # over when the current run finishes -> the self-chaining handover.
@@ -30,9 +23,11 @@ concurrency:
 
 jobs:
   tunnel:
+    if: vars.ENABLE_FREE_TUNNEL == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 355
     steps:
+      - uses: actions/checkout@v4
       # ---------------------------------------------------------------
       # 1. Queue the NEXT run before anything else -> pending handover.
       # ---------------------------------------------------------------
@@ -40,10 +35,11 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
           GH_REPO: ${{ github.repository }}
+          WORKFLOW_REF: ${{ github.ref_name }}
         run: |
           set -uo pipefail
           for attempt in 1 2 3 4 5; do
-            if gh workflow run vpn.yml --ref "${{ github.event.repository.default_branch }}"; then
+            if gh workflow run vpn.yml --ref "$WORKFLOW_REF"; then
               echo "Next run queued (attempt ${attempt})."
               exit 0
             fi
@@ -80,9 +76,12 @@ jobs:
       #    out to Cloudflare's edge, and you connect to that edge hostname.
       # ---------------------------------------------------------------
       - name: Start Xray and Cloudflare tunnel
+        env:
+          CF_TRANSPORT: ${{ vars.CF_TRANSPORT || 'auto' }}
         run: |
           set -euo pipefail
 
+          case "$CF_TRANSPORT" in auto|quic|http2) ;; *) echo 'Invalid CF_TRANSPORT'; exit 1;; esac
           UUID="$(cat /proc/sys/kernel/random/uuid)"
           WS_PATH="/$(tr -d '-' < /proc/sys/kernel/random/uuid)"
           PORT=18888
@@ -107,13 +106,13 @@ jobs:
           }
           JSON
 
-          python3 -m json.tool "$HOME/vpn/config.json" > /dev/null
+          "$HOME/bin/xray" run -test -c "$HOME/vpn/config.json"
           echo "Xray config OK."
 
           "$HOME/bin/xray" run -c "$HOME/vpn/config.json" > "$HOME/vpn/xray.log" 2>&1 &
           echo $! > "$HOME/vpn/xray.pid"
 
-          "$HOME/bin/cloudflared" tunnel --url "http://127.0.0.1:${PORT}" --no-autoupdate \
+          "$HOME/bin/cloudflared" tunnel --protocol "$CF_TRANSPORT" --metrics 127.0.0.1:20241 --url "http://127.0.0.1:${PORT}" --no-autoupdate \
             > "$HOME/vpn/cloudflared.log" 2>&1 &
           echo $! > "$HOME/vpn/cloudflared.pid"
 
@@ -143,16 +142,19 @@ jobs:
             echo "URL=${URL}"
           } > "$HOME/vpn/env"
 
-          echo "Tunnel is live: ${URL}"
+          python3 scripts/check-tunnel.py "$HOST" "$UUID" "$WS_PATH" "$HOME/bin/xray"
+          echo "Tunnel passed runner-side functional test: ${URL}"
 
       # ---------------------------------------------------------------
       # 4. Publish the v2rayNG config: clipboard URI + auto-refreshing
       #    subscription URL (release asset, overwritten every cycle).
       # ---------------------------------------------------------------
       - name: Publish v2rayNG config
+        if: github.ref_name == github.event.repository.default_branch
         env:
           GH_TOKEN: ${{ github.token }}
           GH_REPO: ${{ github.repository }}
+          CF_TRANSPORT: ${{ vars.CF_TRANSPORT || 'auto' }}
         run: |
           set -euo pipefail
           . "$HOME/vpn/env"
@@ -165,6 +167,7 @@ jobs:
 
           {
             echo "## VPN config for v2rayNG"
+            echo "Connector transport setting: ${CF_TRANSPORT} (not a Tehran latency result)."
             echo
             echo "**Option A - import from clipboard** (v2rayNG: + -> Import from clipboard):"
             echo
@@ -172,18 +175,14 @@ jobs:
             echo "${URI}"
             echo '```'
             echo
-            echo "**Option B - subscription (auto-refreshes on every restart):**"
+            echo "**Option B - subscription (refresh in v2rayNG after rotation):**"
             echo
             echo '```'
             echo "https://github.com/${GH_REPO}/releases/download/vpn-config/config.txt"
             echo '```'
             echo
-            echo "Current plain-text URI is also mirrored to"
-            echo "\`https://raw.githubusercontent.com/${GH_REPO}/live-config/config.txt\`"
-            echo
-            echo "This tunnel serves traffic for **5h25m**, then the next queued run"
-            echo "takes over with a fresh URL. Option B picks up the new URL"
-            echo "automatically; with Option A re-copy this page's URI after each restart."
+            echo "This tunnel lasts at most 5h25m. Handover interrupts active sessions."
+            echo "Refresh the subscription after rotation (automatic refresh depends on client settings)."
           } >> "$GITHUB_STEP_SUMMARY"
 
           # Subscription body = base64(vless URI), what v2rayNG expects.
@@ -195,36 +194,6 @@ jobs:
           gh release upload vpn-config "$HOME/vpn/config.txt" --clobber
 
       # ---------------------------------------------------------------
-      # 4b. Mirror the plain-text config to the live-config branch
-      #     (single commit, force-pushed each cycle - no history spam).
-      #     Current URI: .../raw/live-config/config.txt
-      # ---------------------------------------------------------------
-      - name: Mirror config to live-config branch
-        continue-on-error: true
-        env:
-          GH_TOKEN: ${{ github.token }}
-          GH_REPO: ${{ github.repository }}
-        run: |
-          set -euo pipefail
-          . "$HOME/vpn/env"
-          URI="vless://${UUID}@${HOST}:443?encryption=none&security=tls&sni=${HOST}&type=ws&host=${HOST}&path=%2F${WS_PATH#/}#ArenaVPN"
-          cd "$HOME/vpn"
-          rm -rf mirror && mkdir mirror && cd mirror
-          git init -q
-          git config user.name "vpn-loop"
-          git config user.email "vpn-loop@users.noreply.github.com"
-          git remote add origin "https://x-access-token:${GH_TOKEN}@github.com/${GH_REPO}.git"
-          git checkout -q -B live-config
-          if git fetch -q --depth=1 origin live-config 2>/dev/null; then
-            git reset -q --hard FETCH_HEAD
-          fi
-          printf '%s\n' "${URI}" > config.txt
-          git add config.txt
-          git commit -q -m "config $(date -u +%FT%TZ)" || echo "no change"
-          git push -q -f origin live-config
-          echo "Mirrored to ${GH_REPO}@live-config:config.txt"
-
-      # ---------------------------------------------------------------
       # 5. Serve for 5h25m, then hand over to the queued run.
       #    (GitHub hard-kills jobs at 6h; we leave plenty of margin.)
       # ---------------------------------------------------------------
@@ -233,6 +202,11 @@ jobs:
           set -euo pipefail
           . "$HOME/vpn/env"
           echo "Serving ${URL} until $(date -u -d '+5h25m' '+%H:%M:%S UTC')..."
-          sleep 19500
+          deadline=$((SECONDS + 19500))
+          while (( SECONDS < deadline )); do
+            kill -0 "$(cat "$HOME/vpn/xray.pid")" || exit 1
+            kill -0 "$(cat "$HOME/vpn/cloudflared.pid")" || exit 1
+            sleep 30
+          done
           echo "Handing over to the queued run."
           kill "$(cat "$HOME/vpn/xray.pid")" "$(cat "$HOME/vpn/cloudflared.pid")" 2>/dev/null || true
