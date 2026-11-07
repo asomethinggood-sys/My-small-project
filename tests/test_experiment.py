@@ -1,7 +1,7 @@
 import unittest
 from unittest.mock import patch
 import subprocess
-from scripts.experiment import cloudflared_command, probe
+from scripts.experiment import cloudflared_command, probe, early_data_candidate
 
 
 class ExperimentTests(unittest.TestCase):
@@ -21,3 +21,12 @@ class ExperimentTests(unittest.TestCase):
                 cmd = run.call_args.args[0]
                 self.assertNotIn('--insecure', cmd)
                 self.assertIn('socks5h://127.0.0.1:10809', cmd)
+
+    def test_early_data_is_client_only_and_url_encoded(self):
+        from urllib.parse import urlsplit, parse_qs
+        client = {'outbounds': [{'streamSettings': {'wsSettings': {'path': '/abc'}}}]}
+        ed, uri = early_data_candidate(client, 'vless://id@vpn.example.com:443?type=ws&path=%2Fabc#Test')
+        self.assertEqual(client['outbounds'][0]['streamSettings']['wsSettings']['path'], '/abc')
+        self.assertEqual(ed['outbounds'][0]['streamSettings']['wsSettings']['path'], '/abc?ed=2048')
+        self.assertEqual(parse_qs(urlsplit(uri).query)['path'], ['/abc?ed=2048'])
+        self.assertTrue(uri.endswith('#Test-early-data'))

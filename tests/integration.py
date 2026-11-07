@@ -31,6 +31,11 @@ with tempfile.TemporaryDirectory() as tmp:
     threading.Thread(target=server.serve_forever, daemon=True).start()
     origin = json.loads((root / '.runtime/xray.json').read_text())
     origin['log'] = {'loglevel': 'debug'}
+    # Test-only exception: current Xray intentionally blocks private destinations.
+    # Do NOT put this rule in production/public proxy configs.
+    origin['outbounds'][0]['settings'] = {'finalRules': [{
+        'action': 'allow', 'network': 'tcp', 'ip': ['127.0.0.1/32'],
+        'port': str(server.server_port)}]}
     (d / 'origin.json').write_text(json.dumps(origin))
     client = json.loads((root / '.runtime/client-test.json').read_text())
     client['log'] = {'loglevel': 'debug'}

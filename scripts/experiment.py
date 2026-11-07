@@ -2,6 +2,7 @@
 """Bounded, same-runner QUIC vs HTTP/2 experiment. No Tehran measurements."""
 import argparse
 import base64
+import copy
 import json
 import os
 from pathlib import Path
@@ -9,6 +10,7 @@ import re
 import subprocess
 import sys
 import time
+from urllib.parse import urlsplit, urlunsplit, parse_qsl, urlencode, quote
 
 try:
     from .generate import generate
@@ -25,6 +27,18 @@ def cloudflared_command(protocol, metrics_port):
         raise ValueError('Invalid tunnel transport')
     return [str(BIN / 'cloudflared'), 'tunnel', '--no-autoupdate', '--protocol', protocol,
             '--metrics', f'127.0.0.1:{metrics_port}', '--url', 'http://127.0.0.1:18888']
+
+
+def early_data_candidate(client, uri):
+    """Client-only WS early data, not TLS 0-RTT. Keep baseline unchanged."""
+    client = copy.deepcopy(client)
+    ws = client['outbounds'][0]['streamSettings']['wsSettings']
+    ws['path'] += '?ed=2048'
+    parts = urlsplit(uri)
+    query = dict(parse_qsl(parts.query))
+    query['path'] = ws['path']
+    return client, urlunsplit((parts.scheme, parts.netloc, parts.path,
+                              urlencode(query, quote_via=quote), parts.fragment + '-early-data'))
 
 
 def launch(command, name):
@@ -110,6 +124,28 @@ def prepare():
                 first_line = measurement.stdout.splitlines()[0]
                 print(f'::notice title=Runner ONLY timing ({mode})::{first_line}', flush=True)
                 results[mode] = {'functional': True, 'host': host}
+                stop(client)
+                baseline = json.loads((directory / 'client-test.json').read_text())
+                ed_config, ed_uri = early_data_candidate(baseline, uri)
+                (directory / 'client-early-data.json').write_text(json.dumps(ed_config))
+                client = launch([str(BIN / 'xray'), 'run', '-c', str(directory / 'client-early-data.json')], f'{mode}-early-data-client')
+                time.sleep(2)
+                if client.poll() is None and probe('socks5h://127.0.0.1:10809'):
+                    ready.append(ed_uri)
+                    print(f'::notice title=Temporary runner-verified profile ({mode}-early-data)::{ed_uri}', flush=True)
+                    measurement = subprocess.run([sys.executable, str(ROOT / 'scripts/measure.py'),
+                        '--label', f'GitHub-runner-NOT-Tehran-{mode}-early-data',
+                        '--url', 'https://example.com/', '--proxy', 'socks5h://127.0.0.1:10809',
+                        '--count', '5', '--output', str(OUT / f'{mode}-early-data-{time.time_ns()}.csv')],
+                        check=True, capture_output=True, text=True)
+                    print(measurement.stdout, flush=True)
+                    first_line = measurement.stdout.splitlines()[0]
+                    print(f'::notice title=Runner ONLY timing ({mode}-early-data)::{first_line}', flush=True)
+                    results[mode]['early_data_functional'] = True
+                else:
+                    results[mode]['early_data_functional'] = False
+                    print(f'::warning title=Early-data probe failed::{mode}: baseline remains available', flush=True)
+
             except (RuntimeError, subprocess.CalledProcessError) as exc:
                 results[mode] = {'functional': False, 'error': str(exc)}
                 print(f'{mode}: {exc}', flush=True)

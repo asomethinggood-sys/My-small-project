@@ -62,7 +62,7 @@ def generate(host, directory):
                   'address': host, 'port': 443, 'users': [{'id': state['uuid'], 'encryption': 'none'}]}]},
                   'streamSettings': {'network': 'ws', 'security': 'tls',
                                      'tlsSettings': {'serverName': host, 'allowInsecure': False},
-                                     'wsSettings': {'path': state['path'], 'headers': {'Host': host}}}}]}
+                                     'wsSettings': {'path': state['path'], 'host': host}}}]}
     save('client-test.json', json.dumps(client, indent=2) + '\n')
     return state
 
