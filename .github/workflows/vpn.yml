@@ -23,7 +23,10 @@ permissions:
 
 concurrency:
   group: vpn-loop
-  cancel-in-progress: false
+  # A repository_dispatch "kick" cancels whatever runs/pends and restarts the
+  # loop fresh (emergency reset). All other events queue politely and take
+  # over when the current run finishes -> the self-chaining handover.
+  cancel-in-progress: ${{ github.event_name == 'repository_dispatch' }}
 
 jobs:
   tunnel:
@@ -174,6 +177,9 @@ jobs:
             echo '```'
             echo "https://github.com/${GH_REPO}/releases/download/vpn-config/config.txt"
             echo '```'
+            echo
+            echo "Current plain-text URI is also mirrored to"
+            echo "\`https://raw.githubusercontent.com/${GH_REPO}/live-config/config.txt\`"
             echo
             echo "This tunnel serves traffic for **5h25m**, then the next queued run"
             echo "takes over with a fresh URL. Option B picks up the new URL"
