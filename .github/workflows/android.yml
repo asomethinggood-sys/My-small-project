@@ -75,14 +75,20 @@ jobs:
           sudo udevadm control --reload-rules
           sudo udevadm trigger --name-match=kvm
       - name: Android 35 native engine and screen smoke tests (not Tehran)
-        uses: reactivecircus/android-emulator-runner@v2
-        with:
-          api-level: 35
-          target: google_apis
-          arch: x86_64
-          profile: pixel_6
-          disable-animations: true
-          script: bash android/scripts/device-smoke.sh
+        run: |
+          if ! bash android/scripts/emulator-session.sh > android/emulator-boot.log 2>&1; then
+            cat android/emulator-boot.log
+            python3 - <<'PYTHON'
+          from pathlib import Path
+          for name in ['emulator-boot.log','emulator-runtime.log','emulator-log.txt']:
+              p=Path('android')/name
+              if p.exists():
+                  text=p.read_text(errors='replace')[-3500:]
+                  print('::error title='+name+'::'+text.replace('%','%25').replace('\n','%0A').replace('\r','%0D'))
+          PYTHON
+            exit 1
+          fi
+          cat android/emulator-boot.log
       - name: Android screen capture
         if: always()
         uses: actions/upload-artifact@v4
@@ -100,4 +106,6 @@ jobs:
             android/app/build/reports/
             android/build-log.txt
             android/emulator-log.txt
+            android/emulator-boot.log
+            android/emulator-runtime.log
             android/app/build/outputs/androidTest-results/
