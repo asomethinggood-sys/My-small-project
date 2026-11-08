@@ -190,7 +190,7 @@ public final class TunnelService extends VpnService {
             failures++;
             delay=RotationPolicy.retrySeconds(failures);
             // No unverified update replaces the old profile. Do not label a failed probe as connected.
-            String detail=error instanceof IllegalArgumentException?error.getMessage():"Endpoint or subscription unavailable";
+            String detail=error instanceof IllegalArgumentException?"Invalid or unsupported subscription; no update installed":"Endpoint or subscription unavailable";
             publish("Reconnecting",detail+" · retry in "+delay+"s",-1,delay);
         } finally { if(wanted && !destroyed) schedule(delay*1000L); }
     }

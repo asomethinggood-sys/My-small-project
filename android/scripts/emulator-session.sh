@@ -2,7 +2,8 @@
 # Runs only on a GitHub-hosted Linux runner with Android SDK + /dev/kvm.
 set -euo pipefail
 SDK="${ANDROID_HOME:?Android SDK required}"
-"$SDK/cmdline-tools/latest/bin/sdkmanager" 'emulator' 'system-images;android-35;google_apis;x86_64'
+export PATH="$SDK/platform-tools:$PATH"
+"$SDK/cmdline-tools/latest/bin/sdkmanager" 'platform-tools' 'emulator' 'system-images;android-35;google_apis;x86_64'
 printf 'no\n' | "$SDK/cmdline-tools/latest/bin/avdmanager" create avd --force --name continuum --package 'system-images;android-35;google_apis;x86_64' --device pixel_6
 "$SDK/emulator/emulator" -avd continuum -no-window -gpu swiftshader_indirect -noaudio -no-boot-anim -no-snapshot -camera-back none -memory 2048 -cores 2 > android/emulator-runtime.log 2>&1 &
 emulator_pid=$!

@@ -81,8 +81,7 @@ public final class MainActivity extends Activity {
     @Override protected void onResume(){super.onResume();handler.post(update);}
     @Override protected void onPause(){handler.removeCallbacks(update);super.onPause();}
     private void protocols(){new AlertDialog.Builder(this).setTitle("Protocol")
-        .setSingleChoiceItems(new String[]{"VLESS · WebSocket · TLS"},0,(d,which)->{})
-        .setMessage("This is the protocol your server provides. VMess, Trojan and other transports need compatible servers; they are not fake switches in this app.")
+        .setMessage("VLESS · WebSocket · TLS\n\nThis is the protocol your server provides. VMess, Trojan and other transports need compatible servers; they are not fake switches in this app.")
         .setPositiveButton("Done",null).show();}
     private void settings(){
         LinearLayout fields=column();fields.setPadding(dp(24),dp(6),dp(24),0);
