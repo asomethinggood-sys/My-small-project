@@ -29,6 +29,7 @@ public final class TunnelService extends VpnService {
     }
     private final ScheduledExecutorService executor=Executors.newSingleThreadScheduledExecutor();
     private final Object scheduleLock=new Object();
+    private final Object lifecycleLock=new Object();
     private ScheduledFuture<?> next;
     private volatile boolean wanted=false, destroyed=false;
     private CoreController core;
@@ -90,7 +91,8 @@ public final class TunnelService extends VpnService {
             next=executor.schedule(this::tick,delay,TimeUnit.MILLISECONDS);
         }
     }
-    private void setup() throws Exception {
+    private void setup() throws Exception { synchronized(lifecycleLock) {
+        if(!wanted || destroyed) throw new IllegalStateException("Stopping");
         if(tun==null) {
             tun=new Builder().setSession("Continuum").setMtu(1500)
                 .addAddress("172.30.0.2",30).addRoute("0.0.0.0",0)
@@ -110,13 +112,14 @@ public final class TunnelService extends VpnService {
             });
         }
     }
+    }
     private boolean running() { return core!=null && core.getIsRunning(); }
     private long verify(Profile p) throws Exception {
         long result=Libv2ray.measureOutboundDelay(p.config(false).toString(),TEST_URL);
         if(result<0) throw new IllegalStateException("Connection check failed");
         return result;
     }
-    private void install(Profile candidate) throws Exception {
+    private void install(Profile candidate) throws Exception { synchronized(lifecycleLock) {
         Profile previous=active;
         if(!wanted) return;
         if(running()) core.stopLoop();
@@ -133,6 +136,7 @@ public final class TunnelService extends VpnService {
             } catch(Exception ignored) { event("Rollback unavailable; waiting for a working endpoint"); }
             throw failure;
         }
+    }
     }
     private void tick() {
         if(!wanted || destroyed) return;
@@ -198,12 +202,18 @@ public final class TunnelService extends VpnService {
         wanted=false; destroyed=true;
         synchronized(scheduleLock) { if(next!=null) next.cancel(false); }
         if(callback!=null) connectivity.unregisterNetworkCallback(callback);
-        executor.execute(()->{
-            try { if(core!=null) core.stopLoop(); } catch(Exception ignored) {}
-            try { if(tun!=null) tun.close(); } catch(Exception ignored) {}
-        });
+        // Teardown must not wait behind a slow subscription fetch/probe on the scheduler.
+        snapshot=new Snapshot("Disconnecting","Closing the VPN interface",snapshot.host,-1,0,0,true);
+        new Thread(()->{
+            synchronized(lifecycleLock) {
+                try { if(core!=null) core.stopLoop(); } catch(Exception ignored) {}
+                try { if(tun!=null) tun.close(); } catch(Exception ignored) {}
+                core=null; tun=null;
+            }
+            snapshot=new Snapshot("Offline","Disconnected","No active endpoint",-1,0,0,false);
+            event("Disconnected");
+        },"continuum-stop").start();
         executor.shutdown();
-        snapshot=new Snapshot("Offline","Disconnected","No active endpoint",-1,0,0,false);
-        event("Disconnected"); stopForeground(STOP_FOREGROUND_REMOVE); super.onDestroy();
+        stopForeground(STOP_FOREGROUND_REMOVE); super.onDestroy();
     }
 }

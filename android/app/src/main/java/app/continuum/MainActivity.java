@@ -38,7 +38,7 @@ public final class MainActivity extends Activity {
         root.addView(top);add(root,text("A LITTLE LESS RECONNECTING.",10,MUTED),8,20);
         LinearLayout hero=new LinearLayout(this);hero.setOrientation(LinearLayout.VERTICAL);hero.setGravity(Gravity.CENTER_HORIZONTAL);
         orbit=new Orbit();hero.addView(orbit,new LinearLayout.LayoutParams(dp(184),dp(184)));
-        state=text("Offline",36,INK);state.setTypeface(Typeface.create("sans-serif-medium",0));hero.addView(state);
+        state=text("Offline",36,INK);state.setTypeface(Typeface.create("sans-serif-medium",Typeface.NORMAL));hero.addView(state);
         detail=text("Ready when you are",13,MUTED);detail.setGravity(Gravity.CENTER);detail.setMinHeight(dp(44));hero.addView(detail);
         add(root,hero,0,20);
         connect=text("Connect",16,0xffffffff);connect.setGravity(Gravity.CENTER);connect.setBackground(box(INK,18));
