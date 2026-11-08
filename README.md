@@ -5,6 +5,19 @@ The existing US GitHub runner reportedly exceeds 350 ms. That is a user report,
 not a measurement made by this project. **No Tehran-side measurements or live VPS
 deployment have been performed for this change. Temporary runner-side experiments are documented below; no permanent endpoint is supplied.**
 
+## Standalone Android app — Continuum
+
+A native Android client is now implemented in [`android/`](android/README.md),
+with a real Xray engine, automatic subscription checks, candidate verification
+and reconnection. It supports the current VLESS / WebSocket / TLS server.
+**No Worker or purchased domain is needed for the app.**
+
+See [APK download, test results and phone setup](docs/android-results.md).
+This is a development preview: compilation, unit/lint and emulator startup checks
+are distinct from real-phone VPN traffic and 24/7 reliability. Backend outages
+and existing TCP sessions cannot be fixed by the app alone. The server workflow
+and existing connection have not been changed by the app build.
+
 ## Stable Worker address (setup pending)
 
 The proposed relay for **bih.asomethinggood.workers.dev** is prepared in
