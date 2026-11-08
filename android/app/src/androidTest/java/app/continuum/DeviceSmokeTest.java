@@ -1,57 +1,81 @@
 package app.continuum;
 
 import android.app.Activity;
-import android.content.Intent;
-import android.graphics.Bitmap;
+import android.content.*;
+import android.net.*;
+import android.os.*;
+import android.widget.TextView;
 import androidx.test.ext.junit.runners.AndroidJUnit4;
 import androidx.test.platform.app.InstrumentationRegistry;
-import java.io.File;
-import java.io.FileOutputStream;
-import libv2ray.*;
-import go.Seq;
+import java.io.*;
+import java.util.function.BooleanSupplier;
+import org.json.*;
 import org.junit.Test;
 import org.junit.runner.RunWith;
 import static org.junit.Assert.*;
 
 @RunWith(AndroidJUnit4.class)
 public class DeviceSmokeTest {
-    @Test public void nativeEngineLoadsAndStartsValidatedOutboundOnAndroid() throws Exception {
-        var context=InstrumentationRegistry.getInstrumentation().getTargetContext();
-        Seq.setContext(context);
-        Libv2ray.initCoreEnv(context.getFilesDir().getAbsolutePath(),"");
-        assertTrue(Libv2ray.checkVersionX().contains("26.10.31"));
-        CoreController core=Libv2ray.newCoreController(new CoreCallbackHandler(){
-            public long startup(){return 0;}
-            public long shutdown(){return 0;}
-            public long onEmitStatus(long code,String text){return 0;}
-        });
-        Profile profile=Profile.parse("vless://123e4567-e89b-12d3-a456-426614174000@test.example.com:443?encryption=none&security=tls&type=ws&path=%2Ftest");
-        try {
-            // Outbound-only: exercises the packaged JNI engine without claiming a VPN/Internet test.
-            core.startLoop(profile.config(false).toString(),0);
-            assertTrue(core.getIsRunning());
-        } finally { core.stopLoop(); }
-        assertFalse(core.getIsRunning());
+    private final android.app.Instrumentation inst=InstrumentationRegistry.getInstrumentation();
+    private final Context context=inst.getTargetContext();
+    private String shell(String command)throws Exception{
+        try(InputStream in=new ParcelFileDescriptor.AutoCloseInputStream(inst.getUiAutomation().executeShellCommand(command))){
+            ByteArrayOutputStream out=new ByteArrayOutputStream();byte[] b=new byte[2048];int n;while((n=in.read(b))!=-1)out.write(b,0,n);return out.toString("UTF-8");
+        }
     }
-    @Test public void nativeScreenLaunchesOfflineAndCapturesScreenshot() throws Exception {
-        var instrumentation=InstrumentationRegistry.getInstrumentation();
-        var context=instrumentation.getTargetContext();
-        Activity screen=instrumentation.startActivitySync(new Intent(context,MainActivity.class).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK));
-        try {
-            instrumentation.waitForIdleSync();
-            assertFalse(TunnelService.snapshot.running);
-            Bitmap bitmap=instrumentation.getUiAutomation().takeScreenshot();
-            assertNotNull(bitmap);
-            File file=new File(context.getExternalFilesDir(null),"continuum-screen.png");
-            try(FileOutputStream out=new FileOutputStream(file)){assertTrue(bitmap.compress(Bitmap.CompressFormat.PNG,100,out));}
-            // Gradle uninstalls the target after connected tests, removing app-scoped files.
-            // Capture a shell-owned copy in Downloads before finishing the Activity.
-            for(String command:new String[]{"mkdir -p /sdcard/Download", "screencap -p /sdcard/Download/continuum-screen.png"}) {
-                try(var output=new android.os.ParcelFileDescriptor.AutoCloseInputStream(
-                    instrumentation.getUiAutomation().executeShellCommand(command))) {
-                    byte[] buffer=new byte[1024]; while(output.read(buffer)!=-1) { /* wait for command */ }
-                }
+    private void await(String description,BooleanSupplier condition,long seconds)throws Exception{
+        long deadline=SystemClock.elapsedRealtime()+seconds*1000;
+        while(!condition.getAsBoolean()&&SystemClock.elapsedRealtime()<deadline)Thread.sleep(100);
+        assertTrue(description,condition.getAsBoolean());
+    }
+    private boolean vpn(){
+        ConnectivityManager cm=context.getSystemService(ConnectivityManager.class);
+        for(Network n:cm.getAllNetworks()){NetworkCapabilities c=cm.getNetworkCapabilities(n);if(c!=null&&c.hasTransport(NetworkCapabilities.TRANSPORT_VPN))return true;}return false;
+    }
+    private Activity launch(){return inst.startActivitySync(new Intent(context,MainActivity.class).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK|Intent.FLAG_ACTIVITY_CLEAR_TOP));}
+    private void press(Activity screen,String text)throws Exception{
+        await("button should show "+text,()->{final boolean[] found={false};inst.runOnMainSync(()->{TextView v=screen.findViewById(android.R.id.content).findViewWithTag("connect");found[0]=text.contentEquals(v.getText())&&v.isEnabled();});return found[0];},8);
+        inst.runOnMainSync(()->screen.findViewById(android.R.id.content).findViewWithTag("connect").performClick());
+    }
+    @Test public void realTunTrafficAllProtocolsAndDisconnectWhileBound()throws Exception{
+        shell("appops set app.continuum ACTIVATE_VPN allow");shell("pm grant app.continuum android.permission.POST_NOTIFICATIONS");
+        JSONArray profiles=new JSONArray(shell("cat /sdcard/Download/continuum-fixtures.json"));
+        SettingsStore store=new SettingsStore(context);StateClient observer=new StateClient(context);
+        inst.runOnMainSync(observer::begin);
+        try{
+            for(int i=0;i<profiles.length();i++){
+                JSONObject settings=store.load().put("selection",0).put("profiles",new JSONArray().put(new JSONObject().put("uri",profiles.getString(i))));store.save(settings);
+                Activity screen=launch();press(screen,"Connect");
+                await("real engine and TUN connect for fixture "+i,()->observer.status.engineRunning&&observer.status.tunOpen&&"Connected".equals(observer.status.state),100);
+                assertTrue("Android VPN network exists",vpn());
+                shell("run-as app.continuum.probe rm -f files/result");
+                shell("am start -W -n app.continuum.probe/.ProbeActivity");
+                String result="";long deadline=SystemClock.elapsedRealtime()+20000;
+                while(SystemClock.elapsedRealtime()<deadline){result=shell("run-as app.continuum.probe cat files/result").trim();if(result.equals("PASS")||result.equals("FAIL"))break;Thread.sleep(250);}
+                assertEquals("A separate app UID must reach the proxy-only marker through Android TUN", "PASS",result);
+                screen=launch();press(screen,"Disconnect");
+                await("Disconnect must close resources even while observer keeps service bound",()->!observer.status.running&&!observer.status.tunOpen&&!observer.status.engineRunning&&!vpn(),6);
+                assertTrue(store.paused());
+                // Simulates the system's Always-on start action; it must not undo a manual pause.
+                context.startService(new Intent(context,TunnelService.class).setAction(VpnService.SERVICE_INTERFACE));
+                Thread.sleep(1500);assertFalse(vpn());assertFalse(observer.status.running);
+                inst.runOnMainSync(screen::finish);
             }
-        } finally { instrumentation.runOnMainSync(screen::finish); }
+        }finally{context.startService(new Intent(context,TunnelService.class).setAction(TunnelService.STOP));inst.runOnMainSync(observer::end);}
+    }
+    @Test public void disconnectDuringBlockedFetchThenReconnect()throws Exception{
+        shell("appops set app.continuum ACTIVATE_VPN allow");shell("pm grant app.continuum android.permission.POST_NOTIFICATIONS");
+        SettingsStore store=new SettingsStore(context);store.save(store.load().put("selection",-1).put("source","https://10.255.255.1/stalled"));
+        StateClient observer=new StateClient(context);inst.runOnMainSync(observer::begin);Activity screen=launch();
+        try{
+            press(screen,"Connect");await("connecting",()->observer.status.running,10);press(screen,"Disconnect");
+            await("stop is independent of blocked HTTPS",()->!observer.status.running&&!vpn(),6);
+            JSONArray fixtures=new JSONArray(shell("cat /sdcard/Download/continuum-fixtures.json"));
+            store.save(store.load().put("selection",0).put("profiles",new JSONArray().put(new JSONObject().put("uri",fixtures.getString(0)))));
+            press(screen,"Connect");await("new generation must run after stale fetch completes",()->observer.status.engineRunning&&observer.status.tunOpen,60);
+            press(screen,"Disconnect");await("second stop",()->!observer.status.running&&!vpn(),6);
+            Thread.sleep(6000);assertFalse("stale work cannot resurrect stopped VPN",vpn());assertTrue(store.paused());
+            shell("screencap -p /sdcard/Download/continuum-screen.png");
+        }finally{context.startService(new Intent(context,TunnelService.class).setAction(TunnelService.STOP));inst.runOnMainSync(observer::end);inst.runOnMainSync(screen::finish);}
     }
 }

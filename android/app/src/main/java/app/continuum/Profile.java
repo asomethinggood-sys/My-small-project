@@ -3,74 +3,143 @@ package app.continuum;
 import java.net.URI;
 import java.net.URLDecoder;
 import java.nio.charset.StandardCharsets;
+import java.security.MessageDigest;
 import java.util.*;
 import org.json.*;
 
-/** Strict allowlist for this project's VLESS+WS+TLS profiles, not a generic importer. */
+/** Supported profiles, not a transport toggle that pretends to reconfigure a server. */
 public final class Profile {
-    public final String id, host, path, sni, wsHost;
+    public final String protocol, id, host, path, sni, wsHost, transport, cipher, password, label, fingerprint;
     public final int port;
-    private Profile(String id, String host, int port, String path, String sni, String wsHost) {
-        this.id=id; this.host=host; this.port=port; this.path=path; this.sni=sni; this.wsHost=wsHost;
+    private Profile(String protocol,String id,String host,int port,String path,String sni,String wsHost,
+                    String transport,String cipher,String password,String label,String fingerprint) {
+        this.protocol=protocol;this.id=id;this.host=host;this.port=port;this.path=path;
+        this.sni=sni;this.wsHost=wsHost;this.transport=transport;this.cipher=cipher;
+        this.password=password;this.label=label;this.fingerprint=fingerprint;
     }
-    public static Profile parse(String text) {
-        URI uri = URI.create(text.trim());
-        if (!"vless".equals(uri.getScheme()) || uri.getUserInfo()==null) throw new IllegalArgumentException("Only VLESS profiles are supported");
-        String id = UUID.fromString(uri.getUserInfo()).toString();
-        String host = dns(uri.getHost());
-        int port = uri.getPort();
-        if (port<1 || port>65535) throw new IllegalArgumentException("Invalid server port");
-        Map<String,String> q = new HashMap<>();
-        for (String pair : Objects.requireNonNullElse(uri.getRawQuery(), "").split("&")) {
-            if (pair.isEmpty()) continue;
-            String[] kv = pair.split("=",2);
-            String k=decode(kv[0]), v=kv.length==2?decode(kv[1]):"";
-            if (q.put(k,v)!=null) throw new IllegalArgumentException("Duplicate profile option");
-        }
-        Set<String> allowed=Set.of("type","security","encryption","sni","host","path");
-        if (!allowed.containsAll(q.keySet())) throw new IllegalArgumentException("Unsupported profile option; nothing was changed");
-        if (!"ws".equals(q.get("type")) || !"tls".equals(q.get("security")) || !"none".equals(q.get("encryption")))
-            throw new IllegalArgumentException("This server requires VLESS / WebSocket / TLS");
-        String path=q.getOrDefault("path","/");
-        if (!path.startsWith("/") || path.length()>2048 || path.chars().anyMatch(c->c<32 || c==127))
-            throw new IllegalArgumentException("Invalid WebSocket path");
-        return new Profile(id,host,port,path,dns(q.getOrDefault("sni",host)),dns(q.getOrDefault("host",host)));
+    public static Profile parse(String input) {
+        try {
+            if(input==null || input.length()>65536) throw new IllegalArgumentException();
+            String text=input.trim();
+            if(text.startsWith("vmess://")) return vmess(text);
+            URI u=URI.create(text);
+            String scheme=u.getScheme();
+            if(!Set.of("vless","trojan","ss").contains(scheme)) throw new IllegalArgumentException();
+            String host=endpoint(u.getHost());
+            int port=u.getPort();
+            if(port<1 || port>65535 || u.getRawUserInfo()==null) throw new IllegalArgumentException();
+            Map<String,String> q=query(u.getRawQuery());
+            if("ss".equals(scheme)) {
+                if(!q.isEmpty()) throw new IllegalArgumentException(); // SIP002 plugins are not implemented.
+                String credential=decode(u.getRawUserInfo());
+                if(!credential.contains(":")) credential=base64(credential);
+                int colon=credential.indexOf(':');
+                if(colon<1 || colon==credential.length()-1) throw new IllegalArgumentException();
+                String method=credential.substring(0,colon), secret=credential.substring(colon+1);
+                if(!Set.of("aes-128-gcm","aes-256-gcm","chacha20-ietf-poly1305").contains(method)) throw new IllegalArgumentException();
+                return new Profile("shadowsocks","",host,port,"/",host,host,"tcp",method,secret,label(u,"Shadowsocks"),"");
+            }
+            if(!Set.of("type","security","encryption","sni","host","path","fp").containsAll(q.keySet())) throw new IllegalArgumentException();
+            String type=q.getOrDefault("type","tcp");
+            if(!Set.of("tcp","ws").contains(type)) throw new IllegalArgumentException();
+            if(!"tls".equals(q.getOrDefault("security","trojan".equals(scheme)?"tls":""))) throw new IllegalArgumentException();
+            String credential=decode(u.getRawUserInfo());
+            String id="";
+            if("vless".equals(scheme)) {
+                id=UUID.fromString(credential).toString();
+                if(!"none".equals(q.getOrDefault("encryption","none"))) throw new IllegalArgumentException();
+            } else if(credential.isEmpty() || q.containsKey("encryption")) throw new IllegalArgumentException();
+            String path=validPath(q.getOrDefault("path","/"));
+            if("tcp".equals(type) && (q.containsKey("path") || q.containsKey("host"))) throw new IllegalArgumentException();
+            return new Profile(scheme,id,host,port,path,endpoint(q.getOrDefault("sni",host)),
+                endpoint(q.getOrDefault("host",host)),type,"","trojan".equals(scheme)?credential:"",
+                label(u,scheme.toUpperCase(Locale.ROOT)),validFingerprint(q.getOrDefault("fp","")));
+        } catch(Exception ignored) { throw new IllegalArgumentException("Unsupported or invalid profile. Credentials were not logged."); }
+    }
+    private static Profile vmess(String text) throws Exception {
+        JSONObject v=new JSONObject(base64(text.substring(8)));
+        Set<String> allowed=Set.of("v","ps","add","port","id","aid","scy","net","type","host","path","tls","sni","fp","alpn");
+        Iterator<String> keys=v.keys();while(keys.hasNext())if(!allowed.contains(keys.next()))throw new IllegalArgumentException();
+        if(v.optInt("aid",0)!=0 || !"tls".equals(v.optString("tls")) || !Set.of("none","").contains(v.optString("type"))) throw new IllegalArgumentException();
+        String transport=v.optString("net","tcp"), cipher=v.optString("scy","auto");
+        if(!Set.of("ws","tcp").contains(transport) || !Set.of("auto","aes-128-gcm","chacha20-poly1305").contains(cipher)) throw new IllegalArgumentException();
+        if(!Set.of("","http/1.1").contains(v.optString("alpn",""))) throw new IllegalArgumentException();
+        String host=endpoint(v.getString("add"));int port=Integer.parseInt(v.get("port").toString());
+        if(port<1 || port>65535)throw new IllegalArgumentException();
+        String sni=v.optString("sni",host), wsHost=v.optString("host",host);
+        if(sni.isEmpty())sni=host;if(wsHost.isEmpty())wsHost=host;
+        return new Profile("vmess",UUID.fromString(v.getString("id")).toString(),host,port,
+            validPath(v.optString("path","/").isEmpty()?"/":v.optString("path")),endpoint(sni),endpoint(wsHost),
+            transport,cipher,"",safeLabel(v.optString("ps","VMess")),validFingerprint(v.optString("fp","")));
     }
     public static Profile subscription(String content) {
-        if (content.length()>65536) throw new IllegalArgumentException("Subscription is too large");
-        String body=content.trim();
-        if (!body.startsWith("vless://")) {
-            try { body=new String(Base64.getDecoder().decode(body.replaceAll("\\s", "")),StandardCharsets.UTF_8).trim(); }
-            catch (Exception e) { throw new IllegalArgumentException("Invalid subscription encoding"); }
-        }
-        // Do not silently pick an arbitrary profile from a multi-server subscription.
-        String[] lines=body.split("\\R");
-        if (lines.length!=1) throw new IllegalArgumentException("Use a single-profile subscription for automatic rotation");
-        return parse(lines[0]);
+        return parse(single(content));
     }
-    static String dns(String host) {
-        if (host==null || host.length()>253 || !host.matches("(?i)(?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\\.)+[a-z]{2,63}"))
-            throw new IllegalArgumentException("Expected a DNS hostname");
+    public static String single(String content) {
+        if(content==null || content.length()>65536)throw new IllegalArgumentException("Subscription too large");
+        String body=content.trim();
+        if(!body.matches("(?s)^(vless|vmess|trojan|ss)://.*")) body=base64(body.replaceAll("\\s",""));
+        String[] lines=body.trim().split("\\R");
+        if(lines.length!=1) throw new IllegalArgumentException("Automatic rotation requires one authoritative profile");
+        return lines[0];
+    }
+    private static String base64(String value) {
+        try { return new String(Base64.getDecoder().decode(value),StandardCharsets.UTF_8); }
+        catch(IllegalArgumentException e) {return new String(Base64.getUrlDecoder().decode(value),StandardCharsets.UTF_8);}
+    }
+    private static Map<String,String> query(String raw) {
+        Map<String,String> map=new HashMap<>();
+        for(String part:(raw==null?"":raw).split("&")) {
+            if(part.isEmpty())continue;String[] p=part.split("=",2);
+            if(map.put(decode(p[0]),p.length==2?decode(p[1]):"")!=null)throw new IllegalArgumentException();
+        }return map;
+    }
+    private static String endpoint(String host) {
+        if(host==null || host.length()>253 || host.chars().anyMatch(c->c<=32 || c==127))throw new IllegalArgumentException();
+        // Domain names, IPv4 literals, and IPv6 literals from java.net.URI. No ports/paths/userinfo.
+        if(host.startsWith("[")&&host.endsWith("]"))host=host.substring(1,host.length()-1);
+        if(host.contains(":")) {if(!host.matches("[0-9a-fA-F:]+"))throw new IllegalArgumentException();}
+        else if(!host.matches("(?i)[a-z0-9](?:[a-z0-9.-]*[a-z0-9])?"))throw new IllegalArgumentException();
         return host.toLowerCase(Locale.ROOT);
     }
-    static String decode(String s) {
-        try { return URLDecoder.decode(s, "UTF-8"); }
-        catch (java.io.UnsupportedEncodingException impossible) { throw new AssertionError(impossible); }
+    private static String validPath(String path) {
+        if(!path.startsWith("/") || path.length()>2048 || path.chars().anyMatch(c->c<32 || c==127))throw new IllegalArgumentException();return path;
     }
-    public String key() { return id+"|"+host+"|"+port+"|"+path+"|"+sni+"|"+wsHost; }
+    private static String validFingerprint(String value) {
+        if(!Set.of("","chrome","firefox","safari","edge","ios","android").contains(value))throw new IllegalArgumentException();return value;
+    }
+    private static String safeLabel(String value) {return value.replaceAll("[\\p{Cntrl}]","").substring(0,Math.min(value.replaceAll("[\\p{Cntrl}]","").length(),80));}
+    private static String label(URI u,String fallback) {return safeLabel(u.getRawFragment()==null?fallback:decode(u.getRawFragment()));}
+    private static String decode(String s) {try{return URLDecoder.decode(s,"UTF-8");}catch(java.io.UnsupportedEncodingException e){throw new AssertionError(e);}}
+    public String protocolLabel() {return "shadowsocks".equals(protocol)?"Shadowsocks":protocol.toUpperCase(Locale.ROOT);}
+    public String transportLabel() {return "shadowsocks".equals(protocol)?"TCP / UDP · AEAD":("ws".equals(transport)?"WebSocket":"TCP")+" · TLS";}
+    public String key() {
+        try {
+            byte[] digest=MessageDigest.getInstance("SHA-256").digest(config(false).toString().getBytes(StandardCharsets.UTF_8));
+            return Base64.getEncoder().encodeToString(digest);
+        }catch(Exception e){throw new IllegalStateException("Cannot identify profile");}
+    }
     public JSONObject config(boolean tun) throws JSONException {
-        JSONObject stream=new JSONObject().put("network","ws").put("security","tls")
-            .put("tlsSettings",new JSONObject().put("serverName",sni).put("allowInsecure",false))
-            .put("wsSettings",new JSONObject().put("path",path).put("host",wsHost));
-        JSONObject server=new JSONObject().put("address",host).put("port",port).put("users",new JSONArray().put(
-            new JSONObject().put("id",id).put("encryption","none")));
-        JSONObject outbound=new JSONObject().put("tag","proxy").put("protocol","vless")
-            .put("settings",new JSONObject().put("vnext",new JSONArray().put(server))).put("streamSettings",stream);
+        JSONObject out=new JSONObject().put("tag","proxy").put("protocol",protocol);
+        JSONObject server=new JSONObject().put("address",host).put("port",port);
+        if("vless".equals(protocol)||"vmess".equals(protocol)) {
+            JSONObject user=new JSONObject().put("id",id);
+            if("vless".equals(protocol))user.put("encryption","none");else user.put("alterId",0).put("security",cipher);
+            server.put("users",new JSONArray().put(user));out.put("settings",new JSONObject().put("vnext",new JSONArray().put(server)));
+        } else {
+            server.put("password",password);if("shadowsocks".equals(protocol))server.put("method",cipher);
+            out.put("settings",new JSONObject().put("servers",new JSONArray().put(server)));
+        }
+        if(!"shadowsocks".equals(protocol)) {
+            JSONObject tls=new JSONObject().put("serverName",sni).put("allowInsecure",false);
+            if(!fingerprint.isEmpty())tls.put("fingerprint",fingerprint);
+            if("ws".equals(transport))tls.put("alpn",new JSONArray().put("http/1.1"));
+            JSONObject stream=new JSONObject().put("network",transport).put("security","tls").put("tlsSettings",tls);
+            if("ws".equals(transport))stream.put("wsSettings",new JSONObject().put("path",path).put("host",wsHost));
+            out.put("streamSettings",stream);
+        }
         JSONArray inbounds=new JSONArray();
-        if (tun) inbounds.put(new JSONObject().put("tag","tun").put("protocol","tun")
-            .put("settings",new JSONObject().put("name","continuum").put("mtu",1500)));
-        // No freedom/direct fallback. All device traffic entering TUN uses this outbound.
-        return new JSONObject().put("log",new JSONObject().put("loglevel","none"))
-            .put("inbounds",inbounds).put("outbounds",new JSONArray().put(outbound));
+        if(tun)inbounds.put(new JSONObject().put("tag","tun").put("protocol","tun").put("settings",new JSONObject().put("name","continuum").put("mtu",1500)));
+        return new JSONObject().put("log",new JSONObject().put("loglevel","none")).put("inbounds",inbounds).put("outbounds",new JSONArray().put(out));
     }
 }

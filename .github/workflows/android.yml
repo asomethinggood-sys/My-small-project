@@ -1,13 +1,9 @@
 name: Android client
 on:
   push:
-    paths:
-      - android/**
-      - .github/workflows/android.yml
+    paths: [android/**, .github/workflows/android.yml]
   pull_request:
-    paths:
-      - android/**
-      - .github/workflows/android.yml
+    paths: [android/**, .github/workflows/android.yml]
   workflow_dispatch:
 permissions:
   contents: read
@@ -17,95 +13,91 @@ concurrency:
 jobs:
   build:
     runs-on: ubuntu-24.04
-    timeout-minutes: 30
+    timeout-minutes: 40
+    permissions:
+      contents: write
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-java@v4
         with:
           distribution: temurin
           java-version: '21'
-      - name: Install Android 35 on the hosted runner SDK
-        run: |
-          set -euo pipefail
-          "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" "platforms;android-35" "build-tools;35.0.0"
+      - name: Android SDK
+        run: '"$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" "platforms;android-35" "build-tools;35.0.0"'
       - uses: gradle/actions/setup-gradle@v4
         with:
           gradle-version: '8.11.1'
-      - name: Fetch checksum-pinned native VPN engine
+      - name: Fetch checksum-pinned native engine
         run: bash android/scripts/fetch-core.sh
-      - name: Build real APK, unit tests and lint
+      - name: Unit tests, lint and emulator APK
         working-directory: android
         run: |
           set -o pipefail
-          if ! gradle --no-daemon :app:testDebugUnitTest :app:lintDebug :app:assembleDebug > build-log.txt 2>&1; then
-            find app/build/intermediates/lint_intermediate_text_report -name '*.txt' -exec cat {} \; >> build-log.txt 2>/dev/null || true
-            cat build-log.txt
-            python3 - <<'PY'
+          gradle --no-daemon -PtargetAbi=x86_64 :app:testDebugUnitTest :app:lintDebug :app:assembleDebug 2>&1 | tee build-log.txt
+      - name: Build compressed ARM64 release APK
+        working-directory: android
+        run: |
+          gradle --no-daemon -PtargetAbi=arm64-v8a :app:assembleRelease :app:lintRelease
+          mkdir -p release
+          cp app/build/outputs/apk/release/app-release.apk release/continuum-0.2.0-arm64.apk
+          python3 - <<'PY'
           from pathlib import Path
-          import xml.etree.ElementTree as ET
-          report=Path('app/build/reports/lint-results-debug.xml')
-          if report.exists():
-              for issue in ET.parse(report).getroot().iter('issue'):
-                  if issue.get('severity') in ('Error','Fatal'):
-                      message=issue.get('message','').replace('%','%25').replace('\n','%0A')
-                      print('::error title=Lint '+issue.get('id','')+'::'+message)
-          text=Path('build-log.txt').read_text()[-18000:]
-          print('::error title=Android build diagnostics::'+text.replace('%','%25').replace('\n','%0A').replace('\r','%0D'))
+          import zipfile, hashlib
+          p=Path('release/continuum-0.2.0-arm64.apk')
+          with zipfile.ZipFile(p) as z:
+              native=[n for n in z.namelist() if n.startswith('lib/') and n.endswith('.so')]
+              assert native and all(n.startswith('lib/arm64-v8a/') for n in native),native
+              assert all(z.getinfo(n).compress_type==zipfile.ZIP_DEFLATED for n in native)
+          size=p.stat().st_size
+          text=f'ARM64 APK: {size:,} bytes ({size/1000000:.2f} MB; {size/1048576:.2f} MiB).\nSHA256: {hashlib.sha256(p.read_bytes()).hexdigest()}\n'
+          print(text)
+          Path('release/APK-SIZE.txt').write_text(text)
           PY
-            exit 1
-          fi
-          cat build-log.txt
-      - name: Package exact app source for this build
-        run: git archive --format=tar.gz --output=android/continuum-source.tar.gz HEAD android
-      - name: APK and corresponding source/license references
-        uses: actions/upload-artifact@v4
-        with:
-          name: continuum-debug-${{ github.run_number }}
-          retention-days: 7
-          path: |
-            android/app/build/outputs/apk/debug/*.apk
-            android/third-party/libv2ray-sources.jar
-            android/THIRD_PARTY.md
-            android/LICENSE*
-            android/README.md
-            android/continuum-source.tar.gz
-      - name: Enable KVM for the Android smoke test
+      - name: Temporary protocol fixtures (never production configuration)
+        run: |
+          python3 -u android/scripts/vpn-fixture.py > "$RUNNER_TEMP/fixture.log" 2>&1 &
+          fixture_pid=$!
+          for attempt in $(seq 1 150); do
+            if ! kill -0 "$fixture_pid" 2>/dev/null; then cat "$RUNNER_TEMP/fixture.log"; exit 1; fi
+            if grep -q FIXTURE_READY "$RUNNER_TEMP/fixture.log"; then exit 0; fi
+            sleep 2
+          done
+          cat "$RUNNER_TEMP/fixture.log"
+          exit 1
+      - name: Enable KVM
         run: |
           echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' | sudo tee /etc/udev/rules.d/99-kvm4all.rules
           sudo udevadm control --reload-rules
           sudo udevadm trigger --name-match=kvm
-      - name: Android 35 native engine and screen smoke tests (not Tehran)
+      - name: Real Android TUN traffic, all protocols, bound-service disconnect and cancelled-fetch reconnect
         run: |
-          if ! bash android/scripts/emulator-session.sh > android/emulator-boot.log 2>&1; then
-            cat android/emulator-boot.log
-            python3 - <<'PYTHON'
-          from pathlib import Path
-          for name in ['emulator-boot.log','emulator-runtime.log','emulator-log.txt']:
-              p=Path('android')/name
-              if p.exists():
-                  text=p.read_text(errors='replace')[-3500:]
-                  print('::error title='+name+'::'+text.replace('%','%25').replace('\n','%0A').replace('\r','%0D'))
-          PYTHON
-            exit 1
-          fi
-          cat android/emulator-boot.log
-      - name: Android screen capture
+          set -o pipefail
+          bash android/scripts/emulator-session.sh 2>&1 | tee android/emulator-boot.log
+      - name: Corresponding source and licenses
+        run: |
+          git archive --format=tar.gz --output=android/release/continuum-source.tar.gz HEAD android
+          cp android/THIRD_PARTY.md android/LICENSE* android/release/
+          cp android/third-party/libv2ray-sources.jar android/release/
+      - name: Upload full APK as a public prerelease asset (not an artifact ZIP)
+        if: github.event_name != 'pull_request' && github.ref == 'refs/heads/arena/f056ce38-my-small-project'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          tag="continuum-0.2.0-preview-${GITHUB_RUN_NUMBER}"
+          gh release create "$tag" android/release/* --target "$GITHUB_SHA" --prerelease --title "Continuum 0.2 preview · ARM64 · build ${GITHUB_RUN_NUMBER}" --notes "Standalone Android 8+ ARM64 APK. Explicit disconnect, isolated VPN process and additional imported protocols. Automated tests cover a separate app UID through Android TUN on API 35 x86_64; this is not physical ARM/Tehran or 24-hour validation. Preview certificate: uninstall previous builds if signature differs (removes saved settings). APK size and SHA256 are in APK-SIZE.txt. Installed footprint is larger than compressed download. Source and license references attached."
+      - name: Reports and size measurements
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: continuum-screen-${{ github.run_number }}
-          path: android/continuum-screen.png
-          retention-days: 7
-      - name: Test and lint reports
-        if: always()
-        uses: actions/upload-artifact@v4
-        with:
-          name: android-test-reports-${{ github.run_number }}
+          name: android-validation-${{ github.run_number }}
           retention-days: 7
           path: |
             android/app/build/reports/
+            android/app/build/outputs/androidTest-results/
             android/build-log.txt
             android/emulator-log.txt
             android/emulator-boot.log
             android/emulator-runtime.log
-            android/app/build/outputs/androidTest-results/
+            android/device-crash.txt
+            android/continuum-screen.png
+            android/release/APK-SIZE.txt
