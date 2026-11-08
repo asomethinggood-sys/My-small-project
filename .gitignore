@@ -12,3 +12,5 @@ android/build-log.txt
 *.jks
 *.keystore
 android/continuum-source.tar.gz
+android/emulator-log.txt
+android/continuum-screen.png
