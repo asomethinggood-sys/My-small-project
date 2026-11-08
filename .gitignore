@@ -3,3 +3,12 @@ __pycache__/
 measurements/
 *.pem
 *.key
+android/.gradle/
+android/**/build/
+android/app/libs/
+android/third-party/
+android/local.properties
+android/build-log.txt
+*.jks
+*.keystore
+android/continuum-source.tar.gz
