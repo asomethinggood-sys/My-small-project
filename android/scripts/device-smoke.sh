@@ -12,4 +12,6 @@ PY
   exit 1
 fi
 cat emulator-log.txt
-adb pull /sdcard/Android/data/app.continuum/files/continuum-screen.png continuum-screen.png
+if ! adb pull /sdcard/Download/continuum-screen.png continuum-screen.png; then
+  echo '::warning::Device tests passed, but screenshot export was unavailable.'
+fi

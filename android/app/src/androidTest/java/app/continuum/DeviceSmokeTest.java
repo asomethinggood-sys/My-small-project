@@ -44,6 +44,14 @@ public class DeviceSmokeTest {
             assertNotNull(bitmap);
             File file=new File(context.getExternalFilesDir(null),"continuum-screen.png");
             try(FileOutputStream out=new FileOutputStream(file)){assertTrue(bitmap.compress(Bitmap.CompressFormat.PNG,100,out));}
+            // Gradle uninstalls the target after connected tests, removing app-scoped files.
+            // Capture a shell-owned copy in Downloads before finishing the Activity.
+            for(String command:new String[]{"mkdir -p /sdcard/Download", "screencap -p /sdcard/Download/continuum-screen.png"}) {
+                try(var output=new android.os.ParcelFileDescriptor.AutoCloseInputStream(
+                    instrumentation.getUiAutomation().executeShellCommand(command))) {
+                    byte[] buffer=new byte[1024]; while(output.read(buffer)!=-1) { /* wait for command */ }
+                }
+            }
         } finally { instrumentation.runOnMainSync(screen::finish); }
     }
 }
