@@ -79,7 +79,9 @@ public final class TunnelService extends VpnService {
         snapshot=new Snapshot(state,detail,active==null?"Waiting for endpoint":active.host,latency,
             SystemClock.elapsedRealtime()+seconds*1000L,connectedAt,true);
         if(!state.equals(old.state)) event(state+" · "+detail);
-        getSystemService(NotificationManager.class).notify(1,notification(state+" · "+detail));
+        if(Build.VERSION.SDK_INT<33 || checkSelfPermission(android.Manifest.permission.POST_NOTIFICATIONS)
+            ==android.content.pm.PackageManager.PERMISSION_GRANTED)
+            getSystemService(NotificationManager.class).notify(1,notification(state+" · "+detail));
     }
     private void schedule(long delay) {
         synchronized(scheduleLock) {

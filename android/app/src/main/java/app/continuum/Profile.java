@@ -53,7 +53,10 @@ public final class Profile {
             throw new IllegalArgumentException("Expected a DNS hostname");
         return host.toLowerCase(Locale.ROOT);
     }
-    static String decode(String s) { return URLDecoder.decode(s, StandardCharsets.UTF_8); }
+    static String decode(String s) {
+        try { return URLDecoder.decode(s, "UTF-8"); }
+        catch (java.io.UnsupportedEncodingException impossible) { throw new AssertionError(impossible); }
+    }
     public String key() { return id+"|"+host+"|"+port+"|"+path+"|"+sni+"|"+wsHost; }
     public JSONObject config(boolean tun) throws JSONException {
         JSONObject stream=new JSONObject().put("network","ws").put("security","tls")

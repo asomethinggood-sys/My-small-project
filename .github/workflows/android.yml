@@ -38,6 +38,7 @@ jobs:
         run: |
           set -o pipefail
           if ! gradle --no-daemon :app:testDebugUnitTest :app:lintDebug :app:assembleDebug > build-log.txt 2>&1; then
+            find app/build/intermediates/lint_intermediate_text_report -name '*.txt' -exec cat {} \; >> build-log.txt 2>/dev/null || true
             cat build-log.txt
             python3 - <<'PY'
           from pathlib import Path
