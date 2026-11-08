@@ -62,7 +62,7 @@ That destination might be blocked. Test reachability before drawing conclusions.
 
 ## Build / get an APK
 
-The `Android client` GitHub workflow builds the app with JDK 17, Gradle 8.11.1,
+The `Android client` GitHub workflow builds the app with JDK 21 (Java 17 bytecode), Gradle 8.11.1,
 Android Gradle Plugin 8.9.2 and compile/target SDK 35. It downloads checksum-pinned
 `libv2ray.aar` v26.10.31, runs JVM tests + Android lint, and produces a **debug APK**.
 It does not start/cancel VPN workflows, publish server configs or use repository
@@ -75,7 +75,7 @@ Local build on an Android development machine:
 ```bash
 cd android
 bash scripts/fetch-core.sh
-# Install Android SDK 35 and use JDK 17, then Gradle 8.11.1:
+# Install Android SDK 35 and use JDK 21, then Gradle 8.11.1:
 gradle :app:testDebugUnitTest :app:lintDebug :app:assembleDebug
 ```
 
