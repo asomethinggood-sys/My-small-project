@@ -18,6 +18,7 @@ import static org.junit.Assert.*;
 public class DeviceSmokeTest {
     private final android.app.Instrumentation inst=InstrumentationRegistry.getInstrumentation();
     private final Context context=inst.getTargetContext();
+    private StateClient observer;
     private String shell(String command)throws Exception{
         try(InputStream in=new ParcelFileDescriptor.AutoCloseInputStream(inst.getUiAutomation().executeShellCommand(command))){
             ByteArrayOutputStream out=new ByteArrayOutputStream();byte[] b=new byte[2048];int n;while((n=in.read(b))!=-1)out.write(b,0,n);return out.toString("UTF-8");
@@ -26,7 +27,10 @@ public class DeviceSmokeTest {
     private void await(String description,BooleanSupplier condition,long seconds)throws Exception{
         long deadline=SystemClock.elapsedRealtime()+seconds*1000;
         while(!condition.getAsBoolean()&&SystemClock.elapsedRealtime()<deadline)Thread.sleep(100);
-        assertTrue(description,condition.getAsBoolean());
+        if(!condition.getAsBoolean()){
+            VpnStatus s=observer==null?VpnStatus.offline():observer.status;
+            fail(description+"; state="+s.state+" running="+s.running+" tun="+s.tunOpen+" engine="+s.engineRunning+" androidVpn="+vpn()+"\n"+(observer==null?"":observer.history)+"\n"+shell("dumpsys activity services app.continuum"));
+        }
     }
     private boolean vpn(){
         ConnectivityManager cm=context.getSystemService(ConnectivityManager.class);
@@ -37,45 +41,47 @@ public class DeviceSmokeTest {
         await("button should show "+text,()->{final boolean[] found={false};inst.runOnMainSync(()->{TextView v=screen.findViewById(android.R.id.content).findViewWithTag("connect");found[0]=text.contentEquals(v.getText())&&v.isEnabled();});return found[0];},8);
         inst.runOnMainSync(()->screen.findViewById(android.R.id.content).findViewWithTag("connect").performClick());
     }
+    private void cleanup()throws Exception{
+        context.startService(new Intent(context,TunnelService.class).setAction(TunnelService.STOP));
+        long deadline=SystemClock.elapsedRealtime()+6000;Thread.sleep(300);
+        while((observer.status.running||vpn())&&SystemClock.elapsedRealtime()<deadline)Thread.sleep(100);
+        inst.runOnMainSync(observer::end);
+    }
     @Test public void realTunTrafficAllProtocolsAndDisconnectWhileBound()throws Exception{
         shell("appops set app.continuum ACTIVATE_VPN allow");shell("pm grant app.continuum android.permission.POST_NOTIFICATIONS");
         JSONArray profiles=new JSONArray(shell("cat /sdcard/Download/continuum-fixtures.json"));
-        SettingsStore store=new SettingsStore(context);StateClient observer=new StateClient(context);
-        inst.runOnMainSync(observer::begin);
+        SettingsStore store=new SettingsStore(context);observer=new StateClient(context);inst.runOnMainSync(observer::begin);
         try{
             for(int i=0;i<profiles.length();i++){
-                JSONObject settings=store.load().put("selection",0).put("profiles",new JSONArray().put(new JSONObject().put("uri",profiles.getString(i))));store.save(settings);
+                store.save(store.load().put("selection",0).put("profiles",new JSONArray().put(new JSONObject().put("uri",profiles.getString(i)))));
                 Activity screen=launch();press(screen,"Connect");
                 await("real engine and TUN connect for fixture "+i,()->observer.status.engineRunning&&observer.status.tunOpen&&"Connected".equals(observer.status.state),100);
                 assertTrue("Android VPN network exists",vpn());
-                shell("run-as app.continuum.probe rm -f files/result");
-                shell("am start -W -n app.continuum.probe/.ProbeActivity");
+                shell("run-as app.continuum.probe rm -f files/result");shell("am start -W -n app.continuum.probe/.ProbeActivity");
                 String result="";long deadline=SystemClock.elapsedRealtime()+20000;
                 while(SystemClock.elapsedRealtime()<deadline){result=shell("run-as app.continuum.probe cat files/result").trim();if(result.equals("PASS")||result.equals("FAIL"))break;Thread.sleep(250);}
-                assertEquals("A separate app UID must reach the proxy-only marker through Android TUN", "PASS",result);
+                assertEquals("Separate UID must reach proxy-only marker through TUN; fixture "+i,"PASS",result);
                 screen=launch();press(screen,"Disconnect");
-                await("Disconnect must close resources even while observer keeps service bound",()->!observer.status.running&&!observer.status.tunOpen&&!observer.status.engineRunning&&!vpn(),6);
+                await("Disconnect closes resources while observer remains bound",()->!observer.status.running&&!observer.status.tunOpen&&!observer.status.engineRunning&&!vpn(),6);
                 assertTrue(store.paused());
-                // Simulates the system's Always-on start action; it must not undo a manual pause.
                 context.startService(new Intent(context,TunnelService.class).setAction(VpnService.SERVICE_INTERFACE));
-                Thread.sleep(1500);assertFalse(vpn());assertFalse(observer.status.running);
-                inst.runOnMainSync(screen::finish);
+                Thread.sleep(1500);assertFalse(vpn());assertFalse(observer.status.running);inst.runOnMainSync(screen::finish);
             }
-        }finally{context.startService(new Intent(context,TunnelService.class).setAction(TunnelService.STOP));inst.runOnMainSync(observer::end);}
+        }finally{cleanup();}
     }
     @Test public void disconnectDuringBlockedFetchThenReconnect()throws Exception{
         shell("appops set app.continuum ACTIVATE_VPN allow");shell("pm grant app.continuum android.permission.POST_NOTIFICATIONS");
         SettingsStore store=new SettingsStore(context);store.save(store.load().put("selection",-1).put("source","https://10.255.255.1/stalled"));
-        StateClient observer=new StateClient(context);inst.runOnMainSync(observer::begin);Activity screen=launch();
+        observer=new StateClient(context);inst.runOnMainSync(observer::begin);Activity screen=launch();
         try{
             press(screen,"Connect");await("connecting",()->observer.status.running,10);press(screen,"Disconnect");
-            await("stop is independent of blocked HTTPS",()->!observer.status.running&&!vpn(),6);
+            await("stop independent of blocked HTTPS",()->!observer.status.running&&!vpn(),6);
             JSONArray fixtures=new JSONArray(shell("cat /sdcard/Download/continuum-fixtures.json"));
             store.save(store.load().put("selection",0).put("profiles",new JSONArray().put(new JSONObject().put("uri",fixtures.getString(0)))));
-            press(screen,"Connect");await("new generation must run after stale fetch completes",()->observer.status.engineRunning&&observer.status.tunOpen,60);
+            press(screen,"Connect");await("new generation runs after stale fetch",()->observer.status.engineRunning&&observer.status.tunOpen,60);
             press(screen,"Disconnect");await("second stop",()->!observer.status.running&&!vpn(),6);
             Thread.sleep(6000);assertFalse("stale work cannot resurrect stopped VPN",vpn());assertTrue(store.paused());
             shell("screencap -p /sdcard/Download/continuum-screen.png");
-        }finally{context.startService(new Intent(context,TunnelService.class).setAction(TunnelService.STOP));inst.runOnMainSync(observer::end);inst.runOnMainSync(screen::finish);}
+        }finally{cleanup();inst.runOnMainSync(screen::finish);}
     }
 }

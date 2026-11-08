@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """Ephemeral CI-only server. No production subscription or release is changed."""
-import base64, http.server, json, os, pathlib, re, subprocess, threading, time, uuid, urllib.request, zipfile
+import base64, hashlib, http.server, json, os, pathlib, re, subprocess, threading, time, uuid, urllib.request, zipfile
 root = pathlib.Path(os.environ['RUNNER_TEMP']) / 'continuum-fixture'
 root.mkdir(exist_ok=True)
 def download(url, name):
@@ -8,6 +8,7 @@ def download(url, name):
     urllib.request.urlretrieve(url, path)
     return path
 archive=download('https://github.com/XTLS/Xray-core/releases/download/v26.10.31/Xray-linux-64.zip','xray.zip')
+assert hashlib.sha256(archive.read_bytes()).hexdigest()=='e4bd9119f50ae7c41658b1abd0679ae06f98bd864a2907ff33f2f2cf7081b214'
 with zipfile.ZipFile(archive) as z: z.extract('xray',root)
 (root/'xray').chmod(0o755)
 cf=download('https://github.com/cloudflare/cloudflared/releases/download/2026.2.0/cloudflared-linux-amd64','cloudflared')
@@ -26,7 +27,10 @@ for index, protocol in enumerate(['vless','vmess','trojan']):
     if protocol=='vless': settings['decryption']='none'
     inbounds.append({'listen':'127.0.0.1','port':18888+index,'protocol':protocol,'settings':settings,'streamSettings':{'network':'ws','wsSettings':{'path':'/fixture'}}})
 inbounds.append({'listen':'0.0.0.0','port':18891,'protocol':'shadowsocks','settings':{'method':'aes-128-gcm','password':password,'network':'tcp,udp'}})
-config={'log':{'loglevel':'warning'},'inbounds':inbounds,'outbounds':[{'tag':'internet','protocol':'freedom'},{'tag':'marker','protocol':'freedom','settings':{'redirect':'127.0.0.1:18780'}}], 'routing':{'rules':[{'type':'field','ip':['198.18.0.42/32'],'outboundTag':'marker'}]}}
+# Xray 26 blocks private destinations by default. Only the marker outbound may reach
+# this exact loopback service; do not weaken the general Internet outbound.
+marker={'redirect':'127.0.0.1:18780','finalRules':[{'action':'allow','ip':['127.0.0.1/32'],'port':'18780'}]}
+config={'log':{'loglevel':'warning'},'inbounds':inbounds,'outbounds':[{'tag':'internet','protocol':'freedom'},{'tag':'marker','protocol':'freedom','settings':marker}], 'routing':{'rules':[{'type':'field','ip':['198.18.0.42/32'],'outboundTag':'marker'}]}}
 (root/'config.json').write_text(json.dumps(config))
 processes=[subprocess.Popen([str(root/'xray'),'run','-c',str(root/'config.json')],stdout=open(root/'xray.log','w'),stderr=subprocess.STDOUT)]
 try:
