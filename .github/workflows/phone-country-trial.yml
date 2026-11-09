@@ -38,8 +38,30 @@ jobs:
         run: |
           timeout 150s node scripts/egress_vpnbook_browser.mjs
           test -s "$RUNNER_TEMP/nyx-personal-upstream.json"
-      - name: Real one-owner phone trial with automatic shutdown
-        run: sudo --preserve-env=RUNNER_TEMP python3 -u -m scripts.egress_phone_trial
+      - name: Start verified one-owner trial and publish only encrypted provisioning
+        run: |
+          sudo --preserve-env=RUNNER_TEMP python3 -u -m scripts.egress_phone_trial > "$RUNNER_TEMP/nyx-phone-trial.log" 2>&1 &
+          trial_pid=$!
+          echo "$trial_pid" > "$RUNNER_TEMP/nyx-phone-trial.pid"
+          for attempt in $(seq 1 120); do
+            if grep -q 'Private live trial::' "$RUNNER_TEMP/nyx-phone-trial.log"; then
+              cat "$RUNNER_TEMP/nyx-phone-trial.log"
+              exit 0
+            fi
+            if ! kill -0 "$trial_pid" 2>/dev/null; then cat "$RUNNER_TEMP/nyx-phone-trial.log"; exit 1; fi
+            sleep 2
+          done
+          echo '::error::No verified private trial became ready within startup budget'
+          exit 1
+      - name: Keep only this bounded trial alive until its automatic cutoff
+        run: |
+          pid=$(cat "$RUNNER_TEMP/nyx-phone-trial.pid")
+          for attempt in $(seq 1 130); do
+            if ! kill -0 "$pid" 2>/dev/null; then cat "$RUNNER_TEMP/nyx-phone-trial.log"; exit 0; fi
+            sleep 10
+          done
+          sudo kill "$pid"
+          exit 1
       - name: Remove private temporary inputs
         if: always()
         run: sudo rm -rf "$RUNNER_TEMP/nyx-personal-upstream.json" "$RUNNER_TEMP/nyx-private-runtime"
