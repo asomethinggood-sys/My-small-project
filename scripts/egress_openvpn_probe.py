@@ -245,19 +245,34 @@ def probe(envelope, metadata_fetcher=None):
             stage = 'tunnel_drop'
             process.terminate()
             process.wait(timeout=5)
+            drop_checks = []
+            # Recheck the same UDP query that passed with the tunnel alive.
             try:
-                run('ip', 'netns', 'exec', ns, 'curl', '--fail', '--silent', '--max-time', '2',
-                    '--noproxy', '*', 'https://api.ipify.org?format=json', timeout=4)
-                result['tunnel_drop_blocked'] = False
-                result['country_verified'] = False
-                result['status'] = 'leak_test_failed'
+                run('ip', 'netns', 'exec', ns, 'python3', '-c', DNS_UDP_PROBE, timeout=6)
+                drop_checks.append(False)
             except ProbeError:
-                result['tunnel_drop_blocked'] = True
+                drop_checks.append(True)
+            if results:
+                # Never use an endpoint that already failed as the negative control.
+                successful_url = ['https://api.ipify.org?format=json', 'https://ifconfig.co/json',
+                                  'https://ipwho.is/', 'https://ipinfo.io/json'][min(results)]
+                try:
+                    run('ip', 'netns', 'exec', ns, 'curl', '--ipv4', '--fail', '--silent', '--max-time', '2',
+                        '--noproxy', '*', successful_url, timeout=4)
+                    drop_checks.append(False)
+                except ProbeError:
+                    drop_checks.append(True)
+            result['tunnel_drop_blocked'] = len(drop_checks) == 2 and all(drop_checks)
+            if not all(drop_checks):
+                result.update(country_verified=False, status='leak_test_failed')
+            elif len(drop_checks) != 2:
+                result.update(country_verified=False, status='drop_test_inconclusive')
         except (ProbeError, ValueError, OSError, subprocess.TimeoutExpired):
             diagnostic = ''
             if log.exists():
                 with log.open(errors='replace') as stream:
                     diagnostic = stream.read(65536)
+            result['country_verified'] = False
             result['failed_stage'] = stage
             result['openvpn_alive_at_failure'] = process is not None and process.poll() is None
             result['status'] = ('post_handshake_probe_failed' if result.get('handshake_completed') else
