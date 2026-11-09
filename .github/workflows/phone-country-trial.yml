@@ -10,7 +10,8 @@ permissions:
   contents: read
 concurrency:
   group: private-phone-country-trial
-  cancel-in-progress: false
+  # A manually requested replacement must stop the previous private trial.
+  cancel-in-progress: true
 jobs:
   trial:
     if: contains(github.event.head_commit.message, '[private-country-trial]')
