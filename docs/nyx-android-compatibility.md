@@ -26,6 +26,17 @@ All these gates passed in [run 42687844848](https://github.com/asomethinggood-sy
 
 The artifacts use the same ephemeral release certificate within this build. Same-build reinstall passed; cross-build update compatibility is not established. They remain CI candidates, not a published completed country service.
 
+## Supervised-routing rerun
+
+[Run 42690395450](https://github.com/asomethinggood-sys/My-small-project/actions/runs/42690395450), source `0dda72ef98120da4d0b39e752ad799028d38747d`, also passed the full build and all five compatibility jobs, with the new pool supervisor wired into the authenticated Android fixture. Counts remain **21 Rust, 55 JVM, 10 Android instrumentation**. Backend verification [42690394621](https://github.com/asomethinggood-sys/My-small-project/actions/runs/42690394621) passed; the local Python suite now has **121 tests**.
+
+| Supervised candidate | Bytes | SHA-256 |
+|---|---:|---|
+| Universal | 143,832,708 | `8743955a68c036697a3266dcde08ee72d1309d1f1351774118648a2db34a043e` |
+| ARM64 | 41,431,424 | `e6a1e75bed61acd360136c8ccfd1a0ef9e27f5dba8a1ed117ac4c84424adc7d6` |
+
+These are different signed artifacts from the earlier table; do not mix their hashes or assume signer continuity.
+
 ## Service and release limits
 
 Country discovery lists 30 targets, not 30 working exits. Synthetic German/French labels in bounded test fixtures are not geographic evidence. No approved public country service is deployed. Universal packaging does not solve provider provisioning or runtime permission.

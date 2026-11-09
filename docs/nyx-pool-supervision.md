@@ -19,7 +19,7 @@ The owning runtime must call `tick()` at least once per second, or use the finit
 
 Unit tests cover independent pool failure, expiry during blocked probes, cancellation, no worker multiplication, rejection of late/wrong-country/expired evidence, shutdown and finite owner-loop cleanup. Existing socket tests separately prove transport teardown and per-user isolation.
 
-The Android integration fixture uses this scheduler with explicitly synthetic local probes. This proves scheduling/control integration, not independent German/French geography. A production adapter must gather real full-path evidence from its provisioned pool. The existing bounded VPNBook research probe tears its tunnel down after measurement and must **not** be repurposed as proof that a persistent service pool is still alive.
+Backend workflow **42690394621** passed; Android workflow **42690395450** passed its full build, 10 instrumentation tests and all five compatibility jobs. The local Python suite passes 121 tests, including eight scheduler regressions. The Android integration fixture uses this scheduler with explicitly synthetic local probes. This proves scheduling/control integration, not independent German/French geography. A production adapter must gather real full-path evidence from its provisioned pool. The existing bounded VPNBook research probe tears its tunnel down after measurement and must **not** be repurposed as proof that a persistent service pool is still alive.
 
 ## Still not provisioned
 
