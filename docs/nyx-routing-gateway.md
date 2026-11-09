@@ -16,7 +16,7 @@ Run [42668592456](https://github.com/asomethinggood-sys/My-small-project/actions
 - ZIP CRCs, ARM64 ELF headers, signature verification and ZIP alignment passed.
 - Manifest package is `app.nyx.vpn`, minimum API 26, target API 35, ARM64 only.
 - Android 15/API 35's package manager installed those exact bytes with an ARM64 ABI override on an x86 emulator. **This is not native ARM execution.**
-- Android 8/API 26 rejected that ABI override (`ABI arm64-v8a not supported on this device`) before the installation attempt. This was a harness limitation, not evidence of an invalid APK. A follow-up harness records a normal-install ABI result separately; it never counts `NO_MATCHING_ABIS` as successful installation.
+- Android 8/API 26 rejected that ABI override (`ABI arm64-v8a not supported on this device`) before the installation attempt. This was a harness limitation, not evidence of an invalid APK. Follow-up run [42670011233](https://github.com/asomethinggood-sys/My-small-project/actions/runs/42670011233) then performed normal installation: the x86 emulator reached native library extraction and returned `INSTALL_FAILED_NO_MATCHING_ABIS`. This is explicitly **not** successful ARM-device installation. The API35 exact-package install succeeded again.
 
 The phone model, Android version and exact install error are still needed to reproduce the user's failure. Do not blame a corrupted download, a signature conflict or ABI incompatibility without that evidence. The earlier 0.4 success does not diagnose this failure.
 
