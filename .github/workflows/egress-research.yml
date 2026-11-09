@@ -63,6 +63,8 @@ jobs:
       - uses: actions/checkout@v4
       - name: Fetch bounded official-provider metadata
         run: python3 scripts/egress_sources.py
+      - name: Inspect one advertised German OpenVPN bundle (no connection)
+        run: timeout 90s python3 -m scripts.egress_vpnbook
       - name: Fetch and parse live directory
         id: directory
         continue-on-error: true
@@ -78,6 +80,7 @@ jobs:
           path: |
             .runtime/egress/catalog.json
             .runtime/egress/sources.json
+            .runtime/egress/vpnbook-inspection.json
       - name: Preserve discovery failure in job status
         if: steps.directory.outcome == 'failure'
         run: exit 1

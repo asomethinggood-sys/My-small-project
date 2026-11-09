@@ -1,0 +1,136 @@
+#!/usr/bin/env python3
+"""Bounded official German OpenVPN bundle inspection, no connection/publication.
+
+Never persists credentials, archives, configuration bodies or keys. No CAPTCHA or
+WireGuard generator interaction. Provider sharing policy is still a deployment gate.
+"""
+import io
+import json
+from pathlib import Path
+import re
+import socket
+import urllib.parse
+import urllib.request
+import zipfile
+from html.parser import HTMLParser
+
+from scripts.egress_config import global_ip
+from scripts.egress_openvpn import sanitize
+from scripts.egress_sources import SameSiteRedirect
+
+PAGE = 'https://www.vpnbook.com/freevpn/openvpn'
+LIMIT = 2 * 1024 * 1024
+
+
+class Page(HTMLParser):
+    def __init__(self):
+        super().__init__()
+        self.links, self.words = [], []
+        self.hidden = 0
+
+    def handle_starttag(self, tag, attrs):
+        if tag in ('script', 'style'):
+            self.hidden += 1
+        if tag == 'a':
+            href = dict(attrs).get('href', '')
+            url = urllib.parse.urljoin(PAGE, href)
+            parts = urllib.parse.urlsplit(url)
+            if (parts.scheme == 'https' and parts.hostname == 'www.vpnbook.com'
+                    and not parts.username and not parts.password
+                    and parts.path.lower().endswith('.zip') and 'de' in parts.path.lower()):
+                self.links.append(url)
+
+    def handle_endtag(self, tag):
+        if tag in ('script', 'style') and self.hidden:
+            self.hidden -= 1
+
+    def handle_data(self, data):
+        if not self.hidden:
+            self.words.append(data)
+
+
+def fetch(url):
+    opener = urllib.request.build_opener(SameSiteRedirect())
+    with opener.open(urllib.request.Request(url, headers={'User-Agent': 'Nyx-Repository-Research/1.0'}), timeout=20) as response:
+        body = response.read(LIMIT + 1)
+    if len(body) > LIMIT:
+        raise ValueError('Source exceeds size budget')
+    return body
+
+
+def inspect_bundle(blob):
+    report = {'status': 'bundle_downloaded', 'connectable': False, 'connection_tested': False}
+    with zipfile.ZipFile(io.BytesIO(blob)) as archive:
+        entries = archive.infolist()
+        if len(entries) > 32 or sum(item.file_size for item in entries) > LIMIT:
+            raise ValueError('Archive size budget exceeded')
+        candidates = [item for item in entries if item.filename.lower().endswith('.ovpn')
+                      and 'udp' in item.filename.lower() and item.file_size <= 128 * 1024]
+        if not candidates:
+            report['status'] = 'no_udp_profile'
+            return report
+        # Read one member in memory. Never extract provider-controlled paths.
+        config = archive.read(sorted(candidates, key=lambda item: item.filename)[0]).decode('utf-8-sig')
+        names = sorted(set(re.findall(r'^\s*([a-z][a-z0-9-]*)\b', config, re.M)))
+        report['directive_names'] = [name for name in names if len(name) < 40][:64]
+        remote = re.search(r'^[ \t]*remote[ \t]+([A-Za-z0-9.-]+)[ \t]+(\d+)[ \t]*$', config, re.M)
+        if not remote:
+            report['status'] = 'unsupported_remote_syntax'
+            return report
+        hostname = remote[1]
+        if not re.fullmatch(r'de\d+\.vpnbook\.com', hostname.lower()):
+            # A public numeric address is accepted only as an advertised, unverified exit.
+            try:
+                address = str(global_ip(hostname))
+            except ValueError:
+                report['status'] = 'unexpected_endpoint'
+                return report
+        else:
+            addresses = sorted({str(global_ip(item[4][0])) for item in
+                                socket.getaddrinfo(hostname, int(remote[2]), socket.AF_INET, socket.SOCK_DGRAM)})
+            if not addresses:
+                report['status'] = 'endpoint_resolution_failed'
+                return report
+            address = addresses[0]
+        config = config[:remote.start()] + f'remote {address} {remote[2]}' + config[remote.end():]
+        try:
+            parsed = sanitize(config)
+        except ValueError as error:
+            # Sanitizer messages are fixed categories, not config values.
+            report.update(status='rejected_by_security_policy', reason=str(error))
+            return report
+        report.update(status='sanitized_unverified', transport=parsed['transport'],
+                      credentials_required=parsed['credentials_required'])
+        return report
+
+
+def main():
+    report = {'provider': 'vpnbook', 'type': 'openvpn', 'advertised_country': 'DE',
+              'shared_use_approved': False, 'connection_tested': False}
+    try:
+        page = Page()
+        page.feed(fetch(PAGE).decode('utf-8', errors='replace'))
+        text = ' '.join(' '.join(page.words).split())
+        username = re.search(r'\bUsername\s*:\s*(vpnbook)\b', text, re.I)
+        password = re.search(r'\bPassword\s*:\s*([A-Za-z0-9_-]{4,64})\b', text, re.I)
+        report['public_credentials_detected'] = bool(username and password)
+        links = sorted(set(page.links))
+        report['german_bundle_links'] = len(links)
+        if links:
+            report.update(inspect_bundle(fetch(links[0])))
+        else:
+            report['status'] = 'no_supported_german_bundle_link'
+    except (OSError, ValueError, zipfile.BadZipFile):
+        report['status'] = 'source_or_validation_error'
+    destination = Path('.runtime/egress/vpnbook-inspection.json')
+    destination.parent.mkdir(parents=True, exist_ok=True)
+    destination.write_text(json.dumps(report, indent=2) + '\n')
+    print('::notice title=Nyx VPNBook inspection::' + report['status']
+          + '; public credentials detected=' + str(report.get('public_credentials_detected', False))
+          + '; German bundle links=' + str(report.get('german_bundle_links', 0)))
+    if 'reason' in report:
+        print('::notice title=Nyx VPNBook policy::' + report['reason'])
+
+
+if __name__ == '__main__':
+    main()
