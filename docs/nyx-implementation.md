@@ -1,6 +1,23 @@
 # Nyx VPN: implementation status and server contract
 
-## Current: reusable WireGuard pool lifecycle
+## Current: real German exit observed on the runner
+
+See `docs/nyx-live-provider-results.md`. Run **42656691009** acquired a German
+VPNBook OpenVPN config through the official UI, authenticated it in a bounded
+isolated experiment, passed UDP DNS and HTTPS, and received matching exit IPs and
+two independent `DE` geolocation results. Host routes remained unchanged and the
+test tunnel was stopped. Xray/WireGuard and local OpenVPN integration also pass on
+GitHub Actions. **73 Python tests and 3 browser-policy tests pass.** Repeat run
+**42657167660** passed the stronger UDP/HTTPS drop checks, but geolocation HTTP,
+timeout and DNS failures prevented a new country confirmation. The pool remains
+unpublished and non-selectable; one successful country observation is not reliability.
+
+This supersedes earlier statements below that runner-side downloads/public-provider
+connections were blocked or untested. There is still no new published country
+service, no established 30-country availability, and no new Nyx APK. Public sharing
+permission and production/app integration remain gates.
+
+## Earlier: reusable WireGuard pool lifecycle
 
 See `docs/nyx-pool-manager-results.md`. **53 unit tests pass**, and the reusable
 manager passed real local encrypted TCP/UDP/DNS tests, including the system
