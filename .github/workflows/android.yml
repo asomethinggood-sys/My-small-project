@@ -94,8 +94,8 @@ jobs:
           cp android/THIRD_PARTY.md android/LICENSE* android/release/
           cp android/third-party/libv2ray-sources.jar android/release/
           cp android/network-report.txt android/release/
-      - name: Upload full staged-migration APK after successful tests
-        if: github.event_name != 'pull_request' && github.ref == 'refs/heads/arena/f056ce38-my-small-project'
+      - name: Publish only on explicit release request after routing acceptance
+        if: github.event_name == 'push' && github.ref == 'refs/heads/arena/f056ce38-my-small-project' && contains(github.event.head_commit.message, '[publish-nyx]')
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
