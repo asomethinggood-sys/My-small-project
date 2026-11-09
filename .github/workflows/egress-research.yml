@@ -18,17 +18,6 @@ concurrency:
   group: nyx-egress-research-${{ github.ref }}
   cancel-in-progress: false
 jobs:
-  cleanup-old-report:
-    runs-on: ubuntu-24.04
-    timeout-minutes: 2
-    permissions:
-      actions: write
-      contents: read
-    steps:
-      - name: Remove obsolete pre-hardening diagnostic artifact
-        env:
-          GH_TOKEN: ${{ github.token }}
-        run: gh api --method DELETE repos/asomethinggood-sys/My-small-project/actions/artifacts/13689783299
   browser-acquisition:
     runs-on: ubuntu-24.04
     timeout-minutes: 10

@@ -1,5 +1,8 @@
 import ssl
 import unittest
+import subprocess
+import tempfile
+from pathlib import Path
 from scripts.egress_openvpn import sanitize
 from scripts.egress_firewall import rules, legacy_rules
 
@@ -21,6 +24,29 @@ class OpenVPNBoundaryTests(unittest.TestCase):
         self.assertIn('ifconfig-noexec', result['config'])
         self.assertIn('script-security 1', result['config'])
         self.assertNotIn('auth-user-pass', result['config'])
+
+    def test_route_hints_are_stripped_and_device_name_normalized(self):
+        result = sanitize(self.config.replace('dev tun', 'dev tun1') +
+                          'pull\nredirect-gateway def1\nroute-delay 2\nfast-io\n')
+        self.assertIn('dev tun\n', result['config'])
+        self.assertNotIn('\nredirect-gateway', result['config'])
+        self.assertNotIn('\nroute-delay', result['config'])
+        self.assertIn('route-noexec', result['config'])
+        self.assertIn('auth SHA256', result['config'])
+
+    def test_inline_client_certificate_key_pair_validated(self):
+        with tempfile.TemporaryDirectory() as directory:
+            cert, key = Path(directory) / 'cert.pem', Path(directory) / 'key.pem'
+            subprocess.run(['openssl', 'req', '-x509', '-newkey', 'rsa:2048', '-nodes',
+                            '-keyout', str(key), '-out', str(cert), '-days', '1',
+                            '-subj', '/CN=nyx-test-only'], check=True,
+                           stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, timeout=15)
+            text = self.config + '<cert>\n' + cert.read_text() + '</cert>\n<key>\n' + key.read_text() + '</key>\n'
+            self.assertIn('<cert>', sanitize(text)['config'])
+            with self.assertRaises(ValueError):
+                sanitize(text.replace(key.read_text().strip(), 'invalid-key'))
+        with self.assertRaises(ValueError):
+            sanitize(self.config + '<key>\ninvalid\n</key>\n')
 
     def test_tcp_transport_distinct_from_udp_payload_capability(self):
         result = sanitize(self.config.replace('proto udp', 'proto tcp-client'))

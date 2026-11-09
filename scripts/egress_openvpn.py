@@ -9,6 +9,8 @@ import ipaddress
 import re
 import shlex
 import ssl
+import tempfile
+from pathlib import Path
 from scripts.egress_config import global_ip
 
 MAX_BYTES = 128 * 1024
@@ -23,6 +25,7 @@ def sanitize(text):
         'client', 'dev', 'proto', 'remote', 'resolv-retry', 'nobind', 'persist-key',
         'persist-tun', 'remote-cert-tls', 'verb', 'auth-user-pass', 'auth', 'cipher',
         'data-ciphers', 'tls-version-min', 'key-direction', 'explicit-exit-notify',
+        'pull', 'redirect-gateway', 'route-delay', 'fast-io',
     }
     for raw in text.splitlines():
         line = raw.strip()
@@ -37,7 +40,7 @@ def sanitize(text):
             continue
         if line.startswith('<'):
             name = line[1:-1]
-            if line != f'<{name}>' or name not in {'ca', 'tls-auth', 'tls-crypt'} or name in blocks:
+            if line != f'<{name}>' or name not in {'ca', 'cert', 'key', 'tls-auth', 'tls-crypt'} or name in blocks:
                 raise ValueError('Unsupported inline block')
             current = name
             continue
@@ -51,7 +54,9 @@ def sanitize(text):
         values[name] = arguments
     if current:
         raise ValueError('Unclosed inline block')
-    if values.get('client') != [] or values.get('dev') != ['tun']:
+    device = values.get('dev', [])
+    if (values.get('client') != [] or len(device) != 1
+            or not re.fullmatch(r'tun[0-9]{0,2}', device[0])):
         raise ValueError('TUN client configuration required')
     protocol = values.get('proto', ['udp'])
     if protocol not in (['udp'], ['udp4'], ['tcp-client'], ['tcp4-client']):
@@ -62,9 +67,17 @@ def sanitize(text):
     address = global_ip(remote[0])
     if address.version != 4 or not 1 <= int(remote[1]) <= 65535:
         raise ValueError('This adapter supports public IPv4 endpoint only')
-    for name in ['nobind', 'persist-key', 'persist-tun', 'auth-user-pass']:
+    for name in ['nobind', 'persist-key', 'persist-tun', 'auth-user-pass', 'pull', 'fast-io']:
         if name in values and values[name]:
             raise ValueError('Directive arguments not permitted')
+    # Provider routing hints are accepted only as bounded data and DISCARDED.
+    # The namespace supervisor, never the downloaded profile, controls routes.
+    if 'redirect-gateway' in values and values['redirect-gateway'] not in ([], ['def1']):
+        raise ValueError('Unsupported route redirect hint')
+    if 'route-delay' in values and (len(values['route-delay']) != 1
+                                   or not values['route-delay'][0].isdigit()
+                                   or not 0 <= int(values['route-delay'][0]) <= 10):
+        raise ValueError('Unsupported route delay hint')
     if values.get('remote-cert-tls', ['server']) != ['server']:
         raise ValueError('Server certificate validation required')
     if values.get('tls-version-min', ['1.2']) not in (['1.2'], ['1.3']):
@@ -91,6 +104,23 @@ def sanitize(text):
         context.load_verify_locations(cadata=ca)
     except ssl.SSLError:
         raise ValueError('Invalid inline CA certificate') from None
+    if ('cert' in blocks) != ('key' in blocks):
+        raise ValueError('Inline client certificate and key must be paired')
+    if 'cert' in blocks:
+        private_key = blocks['key']
+        if not re.fullmatch(r'-----BEGIN (?:RSA |EC )?PRIVATE KEY-----\s+[A-Za-z0-9+/=\s]+-----END (?:RSA |EC )?PRIVATE KEY-----', private_key):
+            raise ValueError('Unsupported inline private key encoding')
+        # SSL validates the pair and key strength. Temporary files are private,
+        # never under artifact directories, and removed even when validation fails.
+        try:
+            with tempfile.TemporaryDirectory(prefix='nyx-key-check-') as directory:
+                cert_path, key_path = Path(directory) / 'cert.pem', Path(directory) / 'key.pem'
+                for path, data in [(cert_path, blocks['cert']), (key_path, private_key)]:
+                    path.touch(mode=0o600, exist_ok=False)
+                    path.write_text(data + '\n')
+                context.load_cert_chain(str(cert_path), str(key_path), password='')
+        except (ssl.SSLError, OSError):
+            raise ValueError('Invalid or unsupported client certificate/key pair') from None
     if 'tls-auth' in blocks and 'tls-crypt' in blocks:
         raise ValueError('Conflicting TLS key modes')
     for name in ['tls-auth', 'tls-crypt']:
@@ -106,8 +136,8 @@ def sanitize(text):
               'tls-version-min ' + values.get('tls-version-min', ['1.2'])[0],
               'script-security 1', 'auth-nocache', 'route-noexec', 'ifconfig-noexec',
               'route-nopull', 'pull-filter ignore redirect-gateway',
-              'pull-filter ignore dhcp-option', 'verb 3']
-    for name in ['cipher', 'data-ciphers', 'auth', 'key-direction']:
+              'pull-filter ignore dhcp-option', 'auth ' + values.get('auth', ['SHA256'])[0], 'verb 3']
+    for name in ['cipher', 'data-ciphers', 'key-direction']:
         if name in values:
             output.append(name + ' ' + values[name][0])
     for name, content in blocks.items():
