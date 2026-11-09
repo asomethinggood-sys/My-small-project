@@ -1,25 +1,31 @@
 #!/usr/bin/env python3
 """Ephemeral compatibility fixtures. No production configs or credentials are modified."""
 import base64, hashlib, http.server, json, os, pathlib, re, socket, subprocess, threading, time, uuid, urllib.request, zipfile
-root=pathlib.Path(os.environ['RUNNER_TEMP'])/'continuum-fixture'; root.mkdir(exist_ok=True)
+root=pathlib.Path(os.environ['RUNNER_TEMP'])/'continuum-fixture';root.mkdir(exist_ok=True)
 def download(url,name):
-    path=root/name; urllib.request.urlretrieve(url,path); return path
+    path=root/name;urllib.request.urlretrieve(url,path);return path
 archive=download('https://github.com/XTLS/Xray-core/releases/download/v26.10.31/Xray-linux-64.zip','xray.zip')
 assert hashlib.sha256(archive.read_bytes()).hexdigest()=='e4bd9119f50ae7c41658b1abd0679ae06f98bd864a2907ff33f2f2cf7081b214'
-with zipfile.ZipFile(archive) as z: z.extract('xray',root)
+with zipfile.ZipFile(archive) as z:z.extract('xray',root)
 (root/'xray').chmod(0o755)
 cf=download('https://github.com/cloudflare/cloudflared/releases/download/2026.2.0/cloudflared-linux-amd64','cloudflared');cf.chmod(0o755)
 class Marker(http.server.BaseHTTPRequestHandler):
+    protocol_version='HTTP/1.1'
     def reply(self,body):
-        self.send_response(200);self.send_header('Content-Length',str(len(body)));self.end_headers();self.wfile.write(body)
+        self.send_response(200);self.send_header('Content-Length',str(len(body)));self.end_headers();self.wfile.write(body);self.wfile.flush()
     def do_GET(self):
         self.reply(bytes(i%251 for i in range(524288)) if self.path=='/large' else b'continuum-vpn-path-ok')
     def do_POST(self):
         size=int(self.headers.get('Content-Length','0'))
         if not 0<size<=65536:self.send_error(400);return
-        self.reply(self.rfile.read(size))
+        body=self.rfile.read(size);print('FIXTURE_UPLOAD_BYTES',len(body),flush=True);self.reply(body)
     def log_message(self,*args):pass
 threading.Thread(target=http.server.ThreadingHTTPServer(('127.0.0.1',18780),Marker).serve_forever,daemon=True).start()
+# Check the fixture itself before attributing any failure to Android's data path.
+payload=bytes(i%251 for i in range(65536))
+with urllib.request.urlopen(urllib.request.Request('http://127.0.0.1:18780/echo',data=payload),timeout=10) as response:
+    assert response.read()==payload
+
 def echo():
     with socket.socket(socket.AF_INET,socket.SOCK_DGRAM) as s:
         s.bind(('127.0.0.1',18781))
