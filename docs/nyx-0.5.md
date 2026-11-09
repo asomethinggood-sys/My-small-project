@@ -39,7 +39,11 @@ Metadata publication runs with bounded discovery tests, not a continuously runni
 - disconnect bypasses rate limiting;
 - shutdown closes the data plane before deleting bookkeeping.
 
-Eleven new unit tests cover these behaviors. This component is **not** a deployed HTTP API or a production supervisor. Its data-plane adapter must genuinely terminate existing flows; the unit tests use a test adapter. The owning supervisor must call the expiry sweep periodically, and a deployed transport must independently enforce deadlines. The existing kernel fixtures exercise isolated networking but do not prove this component's end-to-end production integration.
+Eleven new controller unit tests cover these behaviors. `scripts/egress_ingress.py` now provides a concrete private TCP transport adapter: loopback-only per-lease listeners, operator-provisioned namespace destinations, bounded connection counts and buffers, EOF/half-close forwarding, independent lease deadlines, and immediate closure of existing sockets on revocation. Six real-socket tests pass, including a 150 KB payload, half-close, expiry without a controller sweep, and isolation from another user's pool.
+
+The kernel fixture additionally exercises this controller/transport in front of Xray/WireGuard with TCP and framed UDP probes followed by revocation. It **passed** in [runner 42665056596](https://github.com/asomethinggood-sys/My-small-project/actions/runs/42665056596), commit `279c246`. Its geography is explicitly synthetic, not public German exit evidence. The Python suite now contains **99 passing tests**, including the real-socket tests.
+
+This is still **not** a deployed HTTP API or a complete production supervisor. A trusted authenticated TLS frontend must own the private loopback endpoints; the app must not be given those endpoints directly. The owning supervisor must reconcile pool health and call the session expiry sweep periodically even though the transport independently closes expired flows. The transport deadline is checked at 100 ms polling intervals; it is not a hard real-time guarantee. No component changes the shared default route.
 
 ## Gates not waived by building an APK
 
