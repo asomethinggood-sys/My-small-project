@@ -202,6 +202,7 @@ class Handler(http.server.BaseHTTPRequestHandler):
         if sum(len(k)+len(v) for k,v in self.headers.items()) > 16384:
             return self._reply(431, {'error': 'headers_too_large'})
         controller = self.server.controller
+        route_token = None
         try:
             if self.server.default_route and self.path == self.server.default_route[0]:
                 path, host, port = self.server.default_route
@@ -217,7 +218,7 @@ class Handler(http.server.BaseHTTPRequestHandler):
                     if not controller.healthy or lease is None or lease.generation != generation:
                         raise ValueError('Route unavailable')
                     pool = controller.sessions.resolve(token)
-                    endpoint = controller.plane.endpoint(token)
+                    route_token = token
                     path = self.server.profiles[pool][1]
                     deadline = lease.expires_at
         except (ValueError, KeyError):
@@ -233,7 +234,9 @@ class Handler(http.server.BaseHTTPRequestHandler):
                 headers.append(name + ': ' + values[0])
         self.close_connection = True
         try:
-            with socket.create_connection(endpoint, timeout=3) as upstream:
+            connection = (socket.create_connection(endpoint, timeout=3) if route_token is None
+                          else controller.plane.open_stream(route_token, generation, self.connection))
+            with connection as upstream:
                 upstream.settimeout(3)
                 self.connection.settimeout(3)
                 upstream.sendall(('\r\n'.join(headers)+'\r\n\r\n').encode('ascii'))

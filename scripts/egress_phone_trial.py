@@ -24,6 +24,7 @@ from scripts.egress_ingress import LocalIngressPlane
 from scripts.egress_gateway import Gateway
 from scripts.egress_supervisor import Supervisor
 from scripts.egress_xray import configurations
+from scripts.egress_path_probe import probe as probe_issued_route
 
 ROOT = Path(__file__).resolve().parents[1]
 
@@ -68,14 +69,26 @@ def trial(namespace, upstream, initial):
         # Explicitly scoped to this one owner's personal acceptance test. This
         # is not an approval to redistribute the provider to multiple users.
         sessions.register('personal-de','DE','vpnbook','openvpn',True)
-        plane=LocalIngressPlane({'personal-de':('198.19.250.2',18888)},max_leases=2)
+        plane=LocalIngressPlane({'personal-de':('198.19.250.2',18888)},max_leases=4)
         key=secrets.token_urlsafe(32);owner='phone_trial'
-        controller=Controller(sessions,plane,{owner:key})
+        # Separate internal diagnostics quota must not consume phone renewal slots.
+        diagnostic_key=secrets.token_urlsafe(32)
+        controller=Controller(sessions,plane,{owner:key,'route_diagnostic':diagnostic_key})
         gateway=Gateway(controller,'trial.invalid',{'personal-de':(identity,path)})
         threading.Thread(target=gateway.serve_forever,daemon=True).start()
+        route_ready=False
+        def verify_route(cancel):
+            report=probe_issued_route('https://'+gateway.public_host,'route_diagnostic',diagnostic_key,'DE',ROOT/'.runtime/bin/xray',cancel)
+            print('::notice title=Phone-path exit evidence::'+json.dumps(report),flush=True)
+            if not report['country_verified']:
+                controller.pool_failed('personal-de')
+                raise ProbeError('issued_route_country_mismatch')
+            return Evidence('DE',True,True,True,True,True,time.monotonic()+150)
         def health(cancel):
             if upstream.poll() is not None or any(child.poll() is not None for child in children):
                 raise ProbeError('trial_component_stopped')
+            if route_ready:
+                return verify_route(cancel)
             run('ip','netns','exec',namespace,'python3','-c',DNS_UDP_PROBE,timeout=6)
             observations={}
             urls=['https://api.ipify.org?format=json','https://ifconfig.co/json','https://ipwho.is/','https://ipinfo.io/json']
@@ -89,7 +102,7 @@ def trial(namespace, upstream, initial):
                 except (ProbeError,ValueError):pass
             if not assess_responses(observations)['country_verified']:raise ProbeError('exit_not_verified')
             return Evidence('DE',True,True,True,True,True,time.monotonic()+90)
-        supervisor=Supervisor(controller,{'personal-de':health},interval=30,timeout=28)
+        supervisor=Supervisor(controller,{'personal-de':health},interval=45,timeout=40)
         cf_log=temporary/'connector.log'
         with cf_log.open('w') as log:
             children.append(subprocess.Popen([str(ROOT/'.runtime/bin/cloudflared'),'tunnel','--no-autoupdate','--url',f'http://127.0.0.1:{gateway.server_address[1]}'],stdout=log,stderr=subprocess.STDOUT))
@@ -102,6 +115,10 @@ def trial(namespace, upstream, initial):
             time.sleep(.25)
         else:raise ProbeError('verified_trial_not_ready')
         gateway.public_host=match.group(1)
+        # Do not hand out a country label based only on namespace traffic.
+        # This must pass through the issued TLS/WS lease used by phone clients.
+        verify_route(threading.Event())
+        route_ready=True
         duration=2700
         provision=json.dumps({'countryService':'https://'+gateway.public_host,'countryUser':owner,'countryKey':key,'country':'DE','expires_at':int(time.time())+duration},separators=(',',':')).encode()
         encrypted=subprocess.run(['openssl','pkeyutl','-encrypt','-pubin','-inkey',str(ROOT/'config/trial-recipient.pub'),'-pkeyopt','rsa_padding_mode:oaep','-pkeyopt','rsa_oaep_md:sha256'],input=provision,capture_output=True,check=True).stdout

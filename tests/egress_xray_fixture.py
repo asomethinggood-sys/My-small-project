@@ -83,6 +83,7 @@ def test_xray(binary, pool, control, peer):
             assert response.stdout == 'nyx-encrypted-path'
             response = run(control, sys.executable, '-c', UDP_PROBE)
             assert response.stdout.strip() == 'udp-vless-wireguard-ok'
+            run(control, sys.executable, '-c', 'from scripts.egress_path_probe import udp_dns; udp_dns(10809)')
             run(control, sys.executable, '-c', WAIT, '127.0.0.1', '10810')
             unauthorized = subprocess.run(['ip', 'netns', 'exec', control, 'curl', '--fail', '--silent',
                                            '--max-time', '2', '--noproxy', '', '--proxy',

@@ -9,7 +9,7 @@ on:
 permissions:
   contents: write
 concurrency:
-  group: private-phone-country-trial
+  group: ${{ contains(github.event.head_commit.message, '[private-country-trial]') && 'private-phone-country-trial' || format('trial-validation-{0}', github.run_id) }}
   # A manually requested replacement must stop the previous private trial.
   cancel-in-progress: true
 jobs:

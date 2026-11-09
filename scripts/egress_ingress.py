@@ -5,6 +5,7 @@ proxy. Destinations are operator-provisioned isolated Xray pool ingress addresse
 opaque TCP can carry VLESS/WebSocket framing. This does not provision providers,
 terminate TLS, authenticate HTTP requests, or prove UDP/country connectivity.
 """
+from contextlib import contextmanager
 import ipaddress
 import selectors
 import socket
@@ -62,6 +63,37 @@ class LocalIngressPlane:
             if self.blocked or entry is None or entry['lease'].expires_at <= self.clock():
                 raise ValueError('Ingress unavailable')
             return entry['endpoint']
+
+    @contextmanager
+    def open_stream(self, token, generation, incoming):
+        """Tracked direct gateway stream: no second loopback TCP relay/thread.
+
+        The lease listener remains for compatible adapters and independently
+        enforces expiration. Both paths share quotas and revocation bookkeeping.
+        """
+        with self.lock:
+            entry = self.entries.get(token)
+            if (self.blocked or entry is None or entry['stop'].is_set()
+                    or entry['lease'].generation != generation
+                    or self.clock() >= entry['lease'].expires_at
+                    or entry['active'] >= self.max_flows):
+                raise ValueError('Ingress unavailable')
+            outgoing = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+            entry['sockets'].update((incoming, outgoing))
+            entry['active'] += 1
+        try:
+            outgoing.settimeout(3)
+            outgoing.connect(self.destinations[entry['lease'].pool])
+            with self.lock:
+                if entry['stop'].is_set() or self.clock() >= entry['lease'].expires_at:
+                    raise ValueError('Ingress expired during connection')
+            yield outgoing
+        finally:
+            with self.lock:
+                for sock in (incoming, outgoing):
+                    entry['sockets'].discard(sock)
+                    self._close(sock)
+                entry['active'] -= 1
 
     def _accept(self, token, entry):
         try:

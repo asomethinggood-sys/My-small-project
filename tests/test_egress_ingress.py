@@ -123,6 +123,29 @@ class IngressTests(unittest.TestCase):
         first.sendall(b'not displaced')
         self.assertEqual(first.recv(100), b'not displaced')
 
+    def test_direct_gateway_stream_is_tracked_and_revoked(self):
+        lease, _ = self.connect()
+        client, incoming = socket.socketpair()
+        self.sockets.extend([client, incoming])
+        with self.plane.open_stream(lease.token, lease.generation, incoming) as outgoing:
+            outgoing.sendall(b'one relay')
+            self.assertEqual(outgoing.recv(100), b'one relay')
+            self.assertEqual(self.plane.entries[lease.token]['active'], 2)
+            self.control.disconnect('alice', self.key, lease.token)
+            client.settimeout(2)
+            self.assert_closed(client)
+            self.assertEqual(outgoing.fileno(), -1)
+
+    def test_direct_gateway_stream_uses_shared_quota_and_generation(self):
+        lease, _ = self.connect()
+        a, b = socket.socketpair(); self.sockets.extend([a,b])
+        with self.assertRaises(ValueError):
+            with self.plane.open_stream(lease.token, lease.generation+1, b): pass
+        self.plane.max_flows = 1
+        with self.assertRaises(ValueError):
+            with self.plane.open_stream(lease.token, lease.generation, b): pass
+        self.assertEqual(self.plane.entries[lease.token]['active'], 1)
+
     def test_public_or_privileged_destinations_rejected(self):
         for endpoint in [('8.8.8.8',18888),('127.0.0.1',22),('::1',18888)]:
             with self.assertRaises(ValueError): LocalIngressPlane({'x': endpoint})
