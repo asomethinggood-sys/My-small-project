@@ -2,7 +2,7 @@
 import { chromium } from '../.runtime/browser/node_modules/playwright/index.mjs';
 import fs from 'node:fs/promises';
 import {spawnSync} from 'node:child_process';
-import {GERMAN_SERVER_LABEL, UDP53_LABEL, downloadFormat, allowedSource} from './egress_browser_policy.mjs';
+import {GERMAN_SERVER_LABEL, UDP53_LABEL, CONFIG_DOWNLOAD_LABEL, downloadFormat, allowedSource} from './egress_browser_policy.mjs';
 
 const report = {provider: 'vpnbook', protocol: 'openvpn', country: 'DE',
   connection_tested: false, status: 'not_started'};
@@ -56,11 +56,10 @@ try {
       // Attach rejection handling before the click, to avoid unhandled timeout.
       const pending = downloadPromise.catch(() => null);
       await button.click({timeout: 10000});
-      const confirm = page.getByRole('button', {name: /download/i});
-      if (await confirm.count() === 1) {
-        const label = await confirm.innerText();
-        if (!/verify|captcha|check/i.test(label)) await confirm.click({timeout: 10000});
-      }
+      const confirm = page.getByRole('button', {name: CONFIG_DOWNLOAD_LABEL});
+      const link = page.getByRole('link', {name: CONFIG_DOWNLOAD_LABEL});
+      if (await confirm.count() === 1) await confirm.click({timeout: 10000});
+      else if (await link.count() === 1) await link.click({timeout: 10000});
       const download = await pending;
       if (!download) {
         report.status = 'download_not_started';

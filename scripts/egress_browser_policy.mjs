@@ -1,5 +1,6 @@
 export const GERMAN_SERVER_LABEL = /Germany Server 1.*de20\.vpnbook\.com/i;
 export const UDP53_LABEL = /UDP 53/i;
+export const CONFIG_DOWNLOAD_LABEL = /^Download \.ovpn File$/i;
 export function downloadFormat(name) {
   if (!/^[A-Za-z0-9_.-]{1,100}\.(zip|ovpn)$/i.test(name)) return null;
   return name.toLowerCase().endsWith('.zip') ? 'zip' : 'ovpn';

@@ -1,12 +1,15 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {GERMAN_SERVER_LABEL, UDP53_LABEL, downloadFormat, allowedSource} from '../scripts/egress_browser_policy.mjs';
+import {GERMAN_SERVER_LABEL, UDP53_LABEL, CONFIG_DOWNLOAD_LABEL, downloadFormat, allowedSource} from '../scripts/egress_browser_policy.mjs';
 
 test('current provider accessible labels match without matching another server', () => {
   assert.ok(GERMAN_SERVER_LABEL.test('Germany Server 1de20.vpnbook.com'));
   assert.ok(GERMAN_SERVER_LABEL.test('Germany Server 1 de20.vpnbook.com'));
   assert.ok(!GERMAN_SERVER_LABEL.test('Germany Server 2de220.vpnbook.com'));
   assert.ok(UDP53_LABEL.test('UDP 53DNS port - Good for restricted networks'));
+  assert.ok(CONFIG_DOWNLOAD_LABEL.test('Download .ovpn File'));
+  assert.ok(!CONFIG_DOWNLOAD_LABEL.test('3Download Configuration'));
+  assert.ok(!CONFIG_DOWNLOAD_LABEL.test('Download xovpn File'));
 });
 test('download names cannot select paths or executable formats', () => {
   assert.equal(downloadFormat('vpnbook-de20-udp53.ovpn'), 'ovpn');
