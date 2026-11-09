@@ -1,6 +1,8 @@
 # Nyx VPN — Android preview with Rust core policy
 
-[**Download Nyx 0.5 ARM64 APK — 19.23 MB**](https://github.com/asomethinggood-sys/My-small-project/releases/download/nyx-0.5.0-preview-21/nyx-0.5.0-arm64.apk)
+**Installation failure has been reported for the Nyx preview. It is under investigation; the complete country-routing service is not ready. See [current audit and routing status](../docs/nyx-routing-gateway.md).**
+
+[Previous Nyx 0.5 preview artifact — not a corrected release](https://github.com/asomethinggood-sys/My-small-project/releases/download/nyx-0.5.0-preview-21/nyx-0.5.0-arm64.apk)
 
 Nyx installs alongside Continuum as `app.nyx.vpn`. Custom night interface,
 reduced-motion-aware connection animation, searchable discovery for 30 target
