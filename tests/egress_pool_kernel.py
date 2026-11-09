@@ -18,8 +18,8 @@ from egress_kernel import run, SERVER, UDP_SERVER, DNS_SERVER, CLIENT, UDP_CLIEN
 
 
 def main():
-    if os.geteuid() != 0 or len(sys.argv) != 2:
-        raise SystemExit('Usage: sudo python3 tests/egress_pool_kernel.py /absolute/path/to/wg')
+    if os.geteuid() != 0 or len(sys.argv) not in (2, 3):
+        raise SystemExit('Usage: sudo python3 tests/egress_pool_kernel.py /path/to/wg [/path/to/xray]')
     wg = str(Path(sys.argv[1]).resolve(strict=True))
     suffix = uuid.uuid4().hex[:8]
     control, peer = 'nyxc-' + suffix, 'nyxe-' + suffix
@@ -89,6 +89,9 @@ def main():
                          'show', 'nyx-vpn', 'latest-handshakes').stdout.split()
         assert len(handshakes) == 2 and int(handshakes[1]) > 0
         results.append('Real encrypted handshake verified')
+        if len(sys.argv) == 3:
+            from egress_xray_fixture import test_xray
+            results.extend(test_xray(str(Path(sys.argv[2]).resolve(strict=True)), pool, control, peer))
         pool_namespace = pool.namespace
         resolver_directory = pool.resolver_directory
         pool.close()
