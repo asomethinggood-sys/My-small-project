@@ -24,6 +24,26 @@ concurrency:
   group: nyx-egress-research-${{ github.ref }}
   cancel-in-progress: false
 jobs:
+  recover-release-install:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    permissions:
+      contents: read
+      actions: read
+    steps:
+      - uses: actions/checkout@v4
+      - name: Read minified release installation failure
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh run download 42674790015 --repo asomethinggood-sys/My-small-project --name android-validation-24 --dir .runtime/release-install-debug
+          python3 - <<'PY'
+          from pathlib import Path
+          for name in ['emulator-boot.log','emulator-log.txt','device-crash.txt']:
+            matches=list(Path('.runtime/release-install-debug').rglob(name))
+            text=matches[0].read_text(errors='replace')[-3000:] if matches else 'Not present'
+            print('::notice title=Release audit '+name+'::'+text.replace('%','%25').replace('\n','%0A').replace('\r','%0D'))
+          PY
   psiphon-local:
     runs-on: ubuntu-24.04
     timeout-minutes: 10
