@@ -70,6 +70,34 @@ def fetch(url):
     return body
 
 
+def profile_metadata(config):
+    # Never tokenize PEM/key bodies as directive names: even a short base64
+    # prefix is sensitive. Export a closed vocabulary of names, not raw tokens.
+    known = {'client', 'dev', 'proto', 'remote', 'resolv-retry', 'nobind',
+             'persist-key', 'persist-tun', 'remote-cert-tls', 'verb', 'auth-user-pass',
+             'auth', 'cipher', 'data-ciphers', 'tls-version-min', 'key-direction',
+             'explicit-exit-notify', 'comp-lzo', 'compress', 'route', 'redirect-gateway',
+             'auth-nocache', 'mute-replay-warnings', 'sndbuf', 'rcvbuf', 'pull',
+             'fast-io', 'reneg-sec', 'route-method', 'route-delay', 'up', 'down',
+             'script-security', 'plugin', 'config', 'verify-x509-name', 'setenv'}
+    names, blocks, current = set(), set(), None
+    for raw in config.splitlines():
+        line = raw.strip()
+        if current:
+            if line == '</' + current + '>':
+                current = None
+            continue
+        if not line or line.startswith(('#', ';')):
+            continue
+        if line.startswith('<') and not line.startswith('</'):
+            current = line[1:-1]
+            blocks.add(current if current in {'ca', 'cert', 'key', 'tls-auth', 'tls-crypt'} else 'other')
+            continue
+        name = line.split()[0]
+        names.add(name if name in known else 'other')
+    return {'directive_names': sorted(names), 'inline_blocks': sorted(blocks)}
+
+
 def inspect_bundle(blob):
     report = {'status': 'bundle_downloaded', 'connectable': False, 'connection_tested': False}
     with zipfile.ZipFile(io.BytesIO(blob)) as archive:
@@ -83,8 +111,7 @@ def inspect_bundle(blob):
             return report
         # Read one member in memory. Never extract provider-controlled paths.
         config = archive.read(sorted(candidates, key=lambda item: item.filename)[0]).decode('utf-8-sig')
-        names = sorted(set(re.findall(r'^\s*([a-z][a-z0-9-]*)\b', config, re.M)))
-        report['directive_names'] = [name for name in names if len(name) < 40][:64]
+        report.update(profile_metadata(config))
         remote = re.search(r'^[ \t]*remote[ \t]+([A-Za-z0-9.-]+)[ \t]+(\d+)[ \t]*$', config, re.M)
         if not remote:
             report['status'] = 'unsupported_remote_syntax'

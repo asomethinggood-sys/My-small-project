@@ -110,6 +110,8 @@ console.log(`::notice title=Nyx browser acquisition::${report.status}; German en
 if (report.inspection) {
   console.log(`::notice title=Nyx downloaded configuration::${report.inspection.status}`);
   if (report.inspection.reason) console.log(`::notice title=Nyx configuration policy::${report.inspection.reason}`);
+  if (report.inspection.directive_names) console.log(`::notice title=Nyx configuration directives::${report.inspection.directive_names.join(',')}`);
+  if (report.inspection.inline_blocks) console.log(`::notice title=Nyx configuration block types::${report.inspection.inline_blocks.join(',')}`);
 }
 for (const text of report.remaining_controls || []) {
   console.log(`::notice title=Nyx remaining control::${text.replace(/%/g, '%25').replace(/\r/g, '%0D').replace(/\n/g, '%0A')}`);

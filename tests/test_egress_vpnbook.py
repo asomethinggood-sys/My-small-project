@@ -3,7 +3,7 @@ import ssl
 import unittest
 from unittest.mock import patch
 import zipfile
-from scripts.egress_vpnbook import Page, inspect_bundle
+from scripts.egress_vpnbook import Page, inspect_bundle, profile_metadata
 
 
 def bundle(text, name='../../udp53.ovpn'):
@@ -39,6 +39,11 @@ class VPNBookInspectionTests(unittest.TestCase):
             result = inspect_bundle(bundle('remote evil.example 1234\n'))
         self.assertEqual(result['status'], 'unexpected_endpoint')
         resolve.assert_not_called()
+
+    def test_metadata_never_exports_inline_keys_or_unknown_tokens(self):
+        result = profile_metadata('client\n<key>\nsecretABCDEF\n</key>\nsecretvalue\ncomp-lzo\n')
+        self.assertEqual(result, {'directive_names': ['client', 'comp-lzo', 'other'], 'inline_blocks': ['key']})
+        self.assertNotIn('secret', str(result))
 
     def test_rejects_oversized_archive_budget(self):
         with patch('scripts.egress_vpnbook.LIMIT', 10):
