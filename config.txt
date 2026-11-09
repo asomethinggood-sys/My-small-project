@@ -1,1 +1,1 @@
-vless://b789d7f2-dc57-4b20-9ea5-67b5498f0e4d@hours-daughter-realize-staying.trycloudflare.com:443?encryption=none&security=tls&sni=hours-daughter-realize-staying.trycloudflare.com&type=ws&host=hours-daughter-realize-staying.trycloudflare.com&path=%2F192bee5915b1473e93dfe1507345904d#ArenaVPN
+vless://a1e4aadf-dfaf-4871-8c18-d01120f7823e@quest-icons-moral-classifieds.trycloudflare.com:443?encryption=none&security=tls&sni=quest-icons-moral-classifieds.trycloudflare.com&type=ws&host=quest-icons-moral-classifieds.trycloudflare.com&path=%2F84fe8bf1e94643ef9e1516c6239e7697#ArenaVPN
