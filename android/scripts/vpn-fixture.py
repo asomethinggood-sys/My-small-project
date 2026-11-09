@@ -1,6 +1,11 @@
 #!/usr/bin/env python3
 """Ephemeral compatibility fixtures. No production configs or credentials are modified."""
-import base64, hashlib, http.server, json, os, pathlib, re, socket, subprocess, threading, time, uuid, urllib.request, zipfile
+import base64, hashlib, http.server, json, os, pathlib, re, secrets, socket, subprocess, sys, threading, time, uuid, urllib.request, zipfile
+sys.path.insert(0,str(pathlib.Path(__file__).resolve().parents[2]))
+from scripts.egress_control import Controller
+from scripts.egress_gateway import Gateway
+from scripts.egress_ingress import LocalIngressPlane
+from scripts.egress_sessions import Sessions, Evidence
 root=pathlib.Path(os.environ['RUNNER_TEMP'])/'continuum-fixture';root.mkdir(exist_ok=True)
 def download(url,name):
     path=root/name;urllib.request.urlretrieve(url,path);return path
@@ -37,6 +42,8 @@ for index,protocol in enumerate(['vless','vmess','trojan']):
     settings={'clients':[{'password':password} if protocol=='trojan' else {'id':identity}]}
     if protocol=='vless':settings['decryption']='none'
     inbounds.append({'listen':'127.0.0.1','port':18888+index,'protocol':protocol,'settings':settings,'streamSettings':{'network':'ws','wsSettings':{'path':'/fixture'}}})
+country_path='/'+uuid.uuid4().hex
+inbounds.append({'listen':'127.0.0.1','port':18892,'protocol':'vless','settings':{'clients':[{'id':identity}],'decryption':'none'},'streamSettings':{'network':'ws','wsSettings':{'path':country_path}}})
 inbounds.append({'listen':'0.0.0.0','port':18891,'protocol':'shadowsocks','settings':{'method':'aes-128-gcm','password':password,'network':'tcp,udp'}})
 def redirect(tag,port):
     return {'tag':tag,'protocol':'freedom','settings':{'redirect':f'127.0.0.1:{port}','finalRules':[{'action':'allow','ip':['127.0.0.1/32'],'port':str(port)}]}}
@@ -48,6 +55,18 @@ config={'log':{'loglevel':'warning'},'inbounds':inbounds,'outbounds':[{'tag':'in
         {'type':'field','ip':['198.18.0.43/32'],'network':'udp','outboundTag':'echo'}]}}
 (root/'config.json').write_text(json.dumps(config))
 processes=[subprocess.Popen([str(root/'xray'),'run','-c',str(root/'config.json')],stdout=open(root/'xray.log','w'),stderr=subprocess.STDOUT)]
+# Synthetic DE/FR labels exercise Android selection and renewal, not geography.
+sessions=Sessions()
+for code in ['DE','FR']:sessions.register('fixture-'+code.lower(),code,'local_fixture','vless',True)
+plane=LocalIngressPlane({name:('127.0.0.1',18892) for name in sessions.pools})
+access_key=secrets.token_urlsafe(32)
+control=Controller(sessions,plane,{'android_fixture':access_key})
+gateway=Gateway(control,'fixture.example',{name:(identity,country_path) for name in sessions.pools},default_route=('/fixture','127.0.0.1',18888))
+threading.Thread(target=gateway.serve_forever,daemon=True).start()
+def refresh_fixture_evidence():
+    for pool in sessions.pools:
+        country=sessions.pools[pool]['country']
+        sessions.mark_ready(pool,Evidence(country,True,True,True,True,True,time.monotonic()+60),ticket=sessions.begin_probe(pool))
 try:
     logs=[]
     for index in range(3):
@@ -66,8 +85,25 @@ try:
             data={'v':'2','add':host,'port':443,'id':identity,'aid':0,'net':'ws','type':'none','path':'/fixture','host':host,'tls':'tls','sni':host}
             profiles.append('vmess://'+base64.b64encode(json.dumps(data).encode()).decode())
         else:profiles.append(f'{protocol}://{password if protocol=="trojan" else identity}@{host}:443?security=tls&type=ws&path=%2Ffixture')
-    (root/'profiles.json').write_text(json.dumps(profiles));print('FIXTURE_READY',flush=True)
-    while all(p.poll() is None for p in processes):time.sleep(2)
+    service_log=root/'country-cloudflared.log'
+    processes.append(subprocess.Popen([str(cf),'tunnel','--no-autoupdate','--url',f'http://127.0.0.1:{gateway.server_address[1]}'],stdout=open(service_log,'w'),stderr=subprocess.STDOUT))
+    deadline=time.monotonic()+100
+    while True:
+        match=re.search(r'https://([a-z0-9-]+\.trycloudflare\.com)',service_log.read_text())
+        if match:break
+        if time.monotonic()>deadline:raise RuntimeError('Country TLS fixture unavailable')
+        time.sleep(1)
+    gateway.public_host=match.group(1)
+    fixture={'countryService':'https://'+gateway.public_host,'countryUser':'android_fixture','countryKey':access_key,'geography':'synthetic_fixture_not_public_country_evidence'}
+    private_file=root/'country-service.json';private_file.write_text(json.dumps(fixture));private_file.chmod(0o600)
+    (root/'profiles.json').write_text(json.dumps(profiles))
+    refresh_fixture_evidence();last_refresh=time.monotonic()
+    print('FIXTURE_READY',flush=True)
+    while all(p.poll() is None for p in processes):
+        if time.monotonic()-last_refresh>=10:refresh_fixture_evidence();last_refresh=time.monotonic()
+        control.sweep()
+        time.sleep(2)
     raise RuntimeError('Fixture process exited')
 finally:
+    control.close();gateway.shutdown();gateway.server_close()
     for p in processes:p.terminate()

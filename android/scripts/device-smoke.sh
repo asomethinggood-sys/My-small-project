@@ -3,6 +3,7 @@ set -euo pipefail
 cd "$(dirname "$0")/.."
 gradle --no-daemon -PtargetAbi=x86_64 :probe:installDebug
 adb push "$RUNNER_TEMP/continuum-fixture/profiles.json" /sdcard/Download/continuum-fixtures.json
+adb push "$RUNNER_TEMP/continuum-fixture/country-service.json" /sdcard/Download/nyx-country-fixture.json
 if ! gradle --no-daemon -PtargetAbi=x86_64 :app:connectedDebugAndroidTest > emulator-log.txt 2>&1; then
   cat emulator-log.txt
   adb logcat -d -s AndroidRuntime > device-crash.txt

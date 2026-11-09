@@ -98,6 +98,7 @@ public final class TunnelService extends VpnService {
             Profile p=active;if(!state.equals(status.state))event(state+" · "+detail);
             status=new VpnStatus(state,detail,p==null?"Waiting for endpoint":p.host,p==null?"VLESS":p.protocolLabel(),
                 p==null?"WebSocket · TLS":p.transportLabel(),delay,SystemClock.elapsedRealtime()+seconds*1000L,connectedAt,true,tunOpen,coreRunning);
+            CountryClient.Lease lease=countryLease;status.countryGeneration=lease==null?0:lease.generation;
             broadcast();String text=state+" · "+detail;
             if(!text.equals(lastNotification)&&(Build.VERSION.SDK_INT<33||checkSelfPermission(android.Manifest.permission.POST_NOTIFICATIONS)==android.content.pm.PackageManager.PERMISSION_GRANTED)){
                 getSystemService(NotificationManager.class).notify(1,notification(text));lastNotification=text;
