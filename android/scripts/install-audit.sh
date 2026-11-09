@@ -53,6 +53,16 @@ text=Path('.runtime/install-audit/install.txt').read_text()[-3000:]
 print('::notice title=Exact ARM64 package installation (ABI override; not ARM execution)::'+text.replace('%','%25').replace('\n','%0A').replace('\r','%0D'))
 PY
 if [[ "$result" != 0 ]]; then
+  if grep -q 'ABI arm64-v8a not supported on this device' "$DIR/install.txt"; then
+    set +e
+    adb install --no-streaming "$APK" > "$DIR/native-abi-check.txt" 2>&1
+    native_result=$?
+    set -e
+    if [[ "$native_result" != 0 ]] && grep -q 'INSTALL_FAILED_NO_MATCHING_ABIS' "$DIR/native-abi-check.txt"; then
+      echo '::warning title=ARM device still required::This Android version rejects ABI overrides. Normal installation reached native ABI selection and returned NO_MATCHING_ABIS on the x86 emulator. ARM installation is UNVERIFIED, not passed.'
+      exit 0
+    fi
+  fi
   adb logcat -d -s PackageManager PackageInstaller installd > "$DIR/package-manager.txt"
   exit "$result"
 fi
