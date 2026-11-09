@@ -26,9 +26,20 @@ class Page(HTMLParser):
     def __init__(self):
         super().__init__()
         self.links, self.words = [], []
+        self.routes = set()
         self.hidden = 0
 
     def handle_starttag(self, tag, attrs):
+        attributes = dict(attrs)
+        for field in ('href', 'src', 'action'):
+            value = attributes.get(field, '')
+            parts = urllib.parse.urlsplit(urllib.parse.urljoin(PAGE, value))
+            if (value and parts.hostname == 'www.vpnbook.com' and parts.scheme == 'https'
+                    and re.fullmatch(r'/[A-Za-z0-9_./-]{0,160}', parts.path)
+                    and any(term in parts.path.lower() for term in ('openvpn', 'download', 'config', '.js'))):
+                query_keys = sorted(key for key in urllib.parse.parse_qs(parts.query)
+                                    if re.fullmatch('[A-Za-z0-9_-]{1,32}', key))
+                self.routes.add(parts.path + ('?keys=' + ','.join(query_keys) if query_keys else ''))
         if tag in ('script', 'style'):
             self.hidden += 1
         if tag == 'a':
@@ -116,6 +127,7 @@ def main():
         report['public_credentials_detected'] = bool(username and password)
         links = sorted(set(page.links))
         report['german_bundle_links'] = len(links)
+        report['download_page_routes'] = sorted(page.routes)[:20]
         if links:
             report.update(inspect_bundle(fetch(links[0])))
         else:
@@ -130,6 +142,8 @@ def main():
           + '; German bundle links=' + str(report.get('german_bundle_links', 0)))
     if 'reason' in report:
         print('::notice title=Nyx VPNBook policy::' + report['reason'])
+    for route in report.get('download_page_routes', []):
+        print('::notice title=Nyx VPNBook route::' + route)
 
 
 if __name__ == '__main__':
