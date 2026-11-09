@@ -1,12 +1,11 @@
 package app.continuum;
 
-/** Every asynchronous result belongs to one session. Stop invalidates all outstanding work. */
+/** The monitor serializes JNI transitions; Rust owns token semantics. No native heap handles. */
 public final class SessionGate {
-    private long generation;
-    private boolean active;
-    public synchronized long start() {active=true;return ++generation;}
-    public synchronized void stop() {active=false;++generation;}
-    public synchronized boolean accepts(long token) {return active && generation==token;}
-    public synchronized boolean active() {return active;}
-    public synchronized long current() {return generation;}
+    private long state;
+    public synchronized long start(){state=RustCore.start(state);return state;}
+    public synchronized void stop(){state=RustCore.stop(state);}
+    public synchronized boolean accepts(long token){return RustCore.accepts(state,token);}
+    public synchronized boolean active(){return RustCore.accepts(state,state);}
+    public synchronized long current(){return state;}
 }

@@ -11,7 +11,7 @@ import libv2ray.*;
 import go.Seq;
 import org.json.JSONObject;
 
-/** Explicit VPN lifecycle in :vpn. Native work is serialized, observers are push-only. */
+/** Android lifecycle adapter in :vpn. Policy/token decisions cross a primitive Rust JNI ABI. */
 public final class TunnelService extends VpnService {
     public static final String START="app.continuum.START",STOP="app.continuum.STOP",REFRESH="app.continuum.REFRESH",OBSERVE="app.continuum.OBSERVE";
     public static final int STATE=1,UNOBSERVE=2;
@@ -50,7 +50,8 @@ public final class TunnelService extends VpnService {
         }return true;
     }));
     private boolean send(Messenger target){
-        Message reply=Message.obtain(null,STATE);Bundle b=status.bundle();b.putString("history",String.join("\n\n",events));reply.setData(b);
+        Message reply=Message.obtain(null,STATE);Bundle b=status.bundle();
+        b.putString("history",String.join("\n\n",events));b.putString("diagnostics",Diagnostics.report(status));reply.setData(b);
         try{target.send(reply);return true;}catch(RemoteException ignored){return false;}
     }
     private void broadcast(){observers.values().removeIf(observer->!send(observer));}
@@ -59,20 +60,20 @@ public final class TunnelService extends VpnService {
         super.onCreate();store=new SettingsStore(this);
         getSystemService(NotificationManager.class).createNotificationChannel(new NotificationChannel("connection","VPN connection",NotificationManager.IMPORTANCE_LOW));
         connectivity=getSystemService(ConnectivityManager.class);
-        networkCallback=new ConnectivityManager.NetworkCallback(){
-            @Override public void onAvailable(Network network){changed();}
-            @Override public void onLost(Network network){changed();}
-            private void changed(){checkEpoch.incrementAndGet();main.post(()->requestCheck(750));}
-        };
-        connectivity.registerNetworkCallback(new NetworkRequest.Builder().addCapability(NetworkCapabilities.NET_CAPABILITY_INTERNET)
-            .addCapability(NetworkCapabilities.NET_CAPABILITY_NOT_VPN).build(),networkCallback);
+        networkCallback=new UpstreamMonitor(connectivity,()->{
+            SubscriptionClient.forceNext();checkEpoch.incrementAndGet();main.post(()->requestCheck(750));
+        });
+        connectivity.registerDefaultNetworkCallback(networkCallback);
     }
     @Override public int onStartCommand(Intent intent,int flags,int startId){
         String action=intent==null?"":intent.getAction();
         if(STOP.equals(action)){disconnect(true);return START_NOT_STICKY;}
         if(stopping)return START_NOT_STICKY;
-        if(REFRESH.equals(action)){checkEpoch.incrementAndGet();if(gate.active())requestCheck(0);else stopSelf();return gate.active()?START_STICKY:START_NOT_STICKY;}
-        if(START.equals(action)){try{store.resumeExplicitly();}catch(Exception e){stopSelf();return START_NOT_STICKY;}}
+        if(REFRESH.equals(action)){
+            SubscriptionClient.forceNext();checkEpoch.incrementAndGet();
+            if(gate.active())requestCheck(0);else stopSelf();return gate.active()?START_STICKY:START_NOT_STICKY;
+        }
+        if(START.equals(action)){try{store.resumeExplicitly();SubscriptionClient.forceNext();}catch(Exception e){stopSelf();return START_NOT_STICKY;}}
         if(store.paused()){stopSelf();return START_NOT_STICKY;}
         startForeground(1,notification("Preparing VPN"));lastNotification="";
         if(!gate.active()){long token=gate.start();checkEpoch.incrementAndGet();publish(token,"Connecting","Starting the selected profile",-1,0);}
@@ -85,15 +86,11 @@ public final class TunnelService extends VpnService {
             .setContentText(text).setContentIntent(open).setOngoing(true).setOnlyAlertOnce(true)
             .addAction(new Notification.Action.Builder(null,"Disconnect",stop).build()).build();
     }
-    private void event(String text){
-        events.addFirst(new java.text.SimpleDateFormat("HH:mm:ss",Locale.US).format(new Date())+"  "+text);
-        while(events.size()>30)events.removeLast();
-    }
+    private void event(String text){events.addFirst(new java.text.SimpleDateFormat("HH:mm:ss",Locale.US).format(new Date())+"  "+text);while(events.size()>30)events.removeLast();}
     private void publish(long token,String state,String detail,long delay,int seconds){
         main.post(()->{
             if(!gate.accepts(token)||stopping||destroyed)return;
-            Profile p=active;
-            if(!state.equals(status.state))event(state+" · "+detail);
+            Profile p=active;if(!state.equals(status.state))event(state+" · "+detail);
             status=new VpnStatus(state,detail,p==null?"Waiting for endpoint":p.host,p==null?"VLESS":p.protocolLabel(),
                 p==null?"WebSocket · TLS":p.transportLabel(),delay,SystemClock.elapsedRealtime()+seconds*1000L,connectedAt,true,tunOpen,coreRunning);
             broadcast();String text=state+" · "+detail;
@@ -109,10 +106,8 @@ public final class TunnelService extends VpnService {
         long token=gate.current();scheduled=io.schedule(()->check(token),delay,TimeUnit.MILLISECONDS);
     }
     private boolean upstreamAvailable(){
-        for(Network network:connectivity.getAllNetworks()){
-            NetworkCapabilities c=connectivity.getNetworkCapabilities(network);
-            if(c!=null&&c.hasCapability(NetworkCapabilities.NET_CAPABILITY_INTERNET)&&c.hasCapability(NetworkCapabilities.NET_CAPABILITY_NOT_VPN))return true;
-        }return false;
+        Network network=connectivity.getActiveNetwork();NetworkCapabilities c=network==null?null:connectivity.getNetworkCapabilities(network);
+        return c!=null&&c.hasCapability(NetworkCapabilities.NET_CAPABILITY_INTERNET)&&c.hasCapability(NetworkCapabilities.NET_CAPABILITY_NOT_VPN);
     }
     private void initializeNative(long token)throws Exception{
         engine.submit(()->{
@@ -124,8 +119,7 @@ public final class TunnelService extends VpnService {
         Exception failure=null;
         for(String url:new String[]{TEST_URL,FALLBACK_TEST_URL}){
             if(!gate.accepts(token))throw new InterruptedException();
-            try{long latency=Libv2ray.measureOutboundDelay(profile.config(false).toString(),url);if(latency>=0)return latency;}
-            catch(Exception e){failure=e;}
+            try{long latency=Libv2ray.measureOutboundDelay(profile.config(false).toString(),url);if(latency>=0)return latency;}catch(Exception e){failure=e;}
         }throw new IllegalStateException("Endpoint checks failed",failure);
     }
     private long activeProbe(long token)throws Exception{
@@ -142,16 +136,12 @@ public final class TunnelService extends VpnService {
     private void ensureTun(int mtu)throws Exception{
         if(tun!=null&&tunMtu==mtu)return;
         ParcelFileDescriptor next=new Builder().setSession("Continuum").setMtu(mtu)
-            .addAddress("172.30.0.2",30).addRoute("0.0.0.0",0)
-            .addAddress("fd66:6f6e:7469::2",126).addRoute("::",0)
-            .addDnsServer(NetworkConfig.DNS_ADDRESS)
-            .addDisallowedApplication(getPackageName()).setBlocking(false).establish();
+            .addAddress("172.30.0.2",30).addRoute("0.0.0.0",0).addAddress("fd66:6f6e:7469::2",126).addRoute("::",0)
+            .addDnsServer(NetworkConfig.DNS_ADDRESS).addDisallowedApplication(getPackageName()).setBlocking(false).establish();
         if(next==null)throw new IllegalStateException("VPN consent required");
         if(tun!=null)tun.close();tun=next;tunMtu=mtu;tunOpen=true;
     }
-    private CoreController controller(){return Libv2ray.newCoreController(new CoreCallbackHandler(){
-        public long startup(){return 0;}public long shutdown(){return 0;}public long onEmitStatus(long code,String text){return 0;}
-    });}
+    private CoreController controller(){return Libv2ray.newCoreController(new CoreCallbackHandler(){public long startup(){return 0;}public long shutdown(){return 0;}public long onEmitStatus(long code,String text){return 0;}});}
     private boolean install(Profile next,JSONObject options,long token)throws Exception{
         final String config=NetworkConfig.tunnel(next,options).toString();
         return engine.submit(()->{
@@ -166,18 +156,17 @@ public final class TunnelService extends VpnService {
                 coreRunning=true;active=next;nativeConfig=config;installedOptions=NetworkConfig.identity(options);
                 if(connectedAt==0)connectedAt=SystemClock.elapsedRealtime();return true;
             }catch(Exception error){
-                if(!previous.isEmpty()&&gate.accepts(token)){
-                    try{core.stopLoop();ensureTun(previousMtu);core.startLoop(previous,tun.getFd());coreRunning=core.getIsRunning();}catch(Exception ignored){}
-                }throw error;
+                if(!previous.isEmpty()&&gate.accepts(token)){try{core.stopLoop();ensureTun(previousMtu);core.startLoop(previous,tun.getFd());coreRunning=core.getIsRunning();}catch(Exception ignored){}}
+                throw error;
             }
         }).get(15,TimeUnit.SECONDS);
     }
     private void check(long token){
         if(!gate.accepts(token)||!checking.compareAndSet(false,true))return;
-        int interval=60;long epoch=checkEpoch.get();
+        int interval=60;long epoch=checkEpoch.get(),began=SystemClock.elapsedRealtime();
         try{
             if(!upstreamAvailable()){
-                interval=CheckPolicy.offlineSeconds();publish(token,"Waiting for network","VPN routes retained; checks resume on network availability",-1,interval);return;
+                interval=CheckPolicy.offlineSeconds();publish(token,"Waiting for network",tunOpen?"VPN routes retained; waiting for the default network":"No default network; waiting to open VPN",-1,interval);return;
             }
             JSONObject settings=store.load();boolean interactive=getSystemService(PowerManager.class).isInteractive();
             String manual=SettingsStore.manual(settings),source=settings.optString("source",SubscriptionClient.DEFAULT);
@@ -187,7 +176,7 @@ public final class TunnelService extends VpnService {
                 SubscriptionClient client=new SubscriptionClient();fetcher=client;
                 try{content=client.fetch(source);}catch(Exception error){
                     if(!gate.accepts(token))return;
-                    if(active!=null&&coreRunning){updateUnavailable=true;}
+                    if(active!=null&&coreRunning)updateUnavailable=true;
                     else{content=store.cache(source);if(content.isEmpty())throw error;cached=true;}
                 }finally{fetcher=null;}
             }
@@ -201,59 +190,38 @@ public final class TunnelService extends VpnService {
             }
             initializeNative(token);if(!gate.accepts(token))return;
             long latency=-1;boolean replacing=active!=null&&!same;
-            if(replacing){
-                publish(token,"Checking update","Testing candidate before replacing active VPN",status.latency,interval);
-                latency=candidateProbe(candidate,token);
-            }
-            // An unreachable health-check website is NOT grounds to tear down a
-            // running VPN and interrupt every user connection. Rebuild only for a
-            // new profile/options or an engine that actually stopped.
+            if(replacing){publish(token,"Checking update","Testing candidate before replacing active VPN",status.latency,interval);latency=candidateProbe(candidate,token);}
+            // Endpoint-check failures alone must not kill otherwise-working sessions.
             if(!same||!coreRunning||optionsChanged){
                 publish(token,"Connecting",replacing?"Installing verified update":"Opening VPN; reachability check follows",latency,interval);
                 if(!install(candidate,settings,token))return;
             }
-            // Cold starts no longer create a disposable preflight Xray instance.
-            // Existing engines retain their DNS cache and ongoing connections.
             if(latency<0)latency=activeProbe(token);
             if(!gate.accepts(token))return;
             if(manual==null&&!cached&&!updateUnavailable)store.cache(source,content);
-            failures=0;lastHealth=SystemClock.elapsedRealtime();healthyEpoch=epoch;
+            failures=0;lastHealth=SystemClock.elapsedRealtime();healthyEpoch=epoch;Diagnostics.success(lastHealth-began);
             publish(token,"Connected",cached||updateUnavailable?"Subscription unavailable; active endpoint check passed":candidate.protocolLabel()+" · "+candidate.transportLabel(),latency,interval);
         }catch(Exception error){
             if(!gate.accepts(token))return;
-            failures++;interval=RotationPolicy.retrySeconds(failures);
-            publish(token,coreRunning?"Checking connection":"Reconnecting",
-                error instanceof IllegalArgumentException?"Invalid profile rejected; no update installed":"Reachability check failed; VPN retained and retry scheduled",-1,interval);
-        }catch(LinkageError error){
-            main.post(()->{if(gate.accepts(token)){event("Native engine unavailable on this device");disconnect(true);}});
+            Diagnostics.failure(error);failures++;interval=RotationPolicy.retrySeconds(failures);
+            publish(token,coreRunning?"Checking connection":"Reconnecting",error instanceof IllegalArgumentException?"Invalid profile rejected; no update installed":"Reachability check failed; VPN retained and retry scheduled",-1,interval);
+        }catch(LinkageError error){main.post(()->{if(gate.accepts(token)){event("Native engine unavailable on this device");disconnect(true);}});
         }finally{
             checking.set(false);final int seconds=interval;
-            main.post(()->{
-                if(stopping||destroyed||!gate.active())return;
-                boolean pending=refreshPending||!gate.accepts(token);refreshPending=false;requestCheck(pending?0:seconds*1000L);
-            });
+            main.post(()->{if(stopping||destroyed||!gate.active())return;boolean pending=refreshPending||!gate.accepts(token);refreshPending=false;requestCheck(pending?0:seconds*1000L);});
         }
     }
     private void disconnect(boolean user){
         if(user){try{store.pause();}catch(Exception ignored){event("Could not save pause preference");}}
-        gate.stop();refreshPending=false;if(scheduled!=null)scheduled.cancel(true);
-        if(stopping)return;stopping=true;
+        gate.stop();refreshPending=false;if(scheduled!=null)scheduled.cancel(true);if(stopping)return;stopping=true;
         status=new VpnStatus("Disconnecting","Closing VPN resources",status.host,status.protocol,status.transport,-1,0,0,true,tunOpen,coreRunning);broadcast();
         SubscriptionClient client=fetcher;if(client!=null)new Thread(client::cancel,"cancel-subscription").start();
-        Runnable watchdog=()->{
-            if(!stopping)return;
-            getSystemService(NotificationManager.class).cancel(1);stopForeground(STOP_FOREGROUND_REMOVE);stopSelf();
-            android.os.Process.killProcess(android.os.Process.myPid());
-        };
+        Runnable watchdog=()->{if(!stopping)return;getSystemService(NotificationManager.class).cancel(1);stopForeground(STOP_FOREGROUND_REMOVE);stopSelf();android.os.Process.killProcess(android.os.Process.myPid());};
         main.postDelayed(watchdog,2500);
-        engine.execute(()->{
-            shutdownEngine();
-            main.post(()->{
-                main.removeCallbacks(watchdog);stopping=false;connectedAt=0;active=null;
-                status=VpnStatus.offline();event("Disconnected; explicit Connect is required to resume");broadcast();
-                stopForeground(STOP_FOREGROUND_REMOVE);getSystemService(NotificationManager.class).cancel(1);stopSelf();
-            });
-        });
+        engine.execute(()->{shutdownEngine();main.post(()->{
+            main.removeCallbacks(watchdog);stopping=false;connectedAt=0;active=null;status=VpnStatus.offline();event("Disconnected; explicit Connect is required to resume");broadcast();
+            stopForeground(STOP_FOREGROUND_REMOVE);getSystemService(NotificationManager.class).cancel(1);stopSelf();
+        });});
     }
     private void shutdownEngine(){
         try{if(tun!=null)tun.close();}catch(Exception ignored){}tun=null;tunOpen=false;
@@ -263,7 +231,6 @@ public final class TunnelService extends VpnService {
     @Override public void onDestroy(){
         destroyed=true;gate.stop();if(scheduled!=null)scheduled.cancel(true);
         try{connectivity.unregisterNetworkCallback(networkCallback);}catch(Exception ignored){}
-        observers.clear();if(!stopping)engine.execute(this::shutdownEngine);
-        io.shutdownNow();engine.shutdown();super.onDestroy();
+        observers.clear();if(!stopping)engine.execute(this::shutdownEngine);io.shutdownNow();engine.shutdown();super.onDestroy();
     }
 }

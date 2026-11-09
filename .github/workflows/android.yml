@@ -27,30 +27,41 @@ jobs:
       - uses: gradle/actions/setup-gradle@v4
         with:
           gradle-version: '8.11.1'
-      - name: Fetch checksum-pinned native engine
+      - name: Fetch checksum-pinned Xray engine
         run: bash android/scripts/fetch-core.sh
-      - name: Unit tests, lint and emulator APK
+      - name: Rust tests, JNI boundary tests, JVM tests, lint and emulator APK
         working-directory: android
         run: |
           set -o pipefail
           gradle --no-daemon -PtargetAbi=x86_64 :app:testDebugUnitTest :app:lintDebug :app:assembleDebug 2>&1 | tee build-log.txt
+      - name: Configure private stable signing if provisioned
+        if: github.event_name != 'pull_request' && github.ref == 'refs/heads/arena/f056ce38-my-small-project'
+        env:
+          CONTINUUM_SIGNING_KEY_B64: ${{ secrets.CONTINUUM_SIGNING_KEY_B64 }}
+          CONTINUUM_STORE_PASSWORD: ${{ secrets.CONTINUUM_STORE_PASSWORD }}
+          CONTINUUM_KEY_ALIAS: ${{ secrets.CONTINUUM_KEY_ALIAS }}
+          CONTINUUM_KEY_PASSWORD: ${{ secrets.CONTINUUM_KEY_PASSWORD }}
+        run: python3 android/scripts/configure-signing.py
       - name: Build compressed ARM64 release APK
         working-directory: android
         run: |
           gradle --no-daemon -PtargetAbi=arm64-v8a :app:assembleRelease :app:lintRelease
           mkdir -p release
-          cp app/build/outputs/apk/release/app-release.apk release/continuum-0.3.0-arm64.apk
+          cp app/build/outputs/apk/release/app-release.apk release/continuum-0.4.0-arm64.apk
+          "$ANDROID_HOME/build-tools/35.0.0/apksigner" verify --print-certs release/continuum-0.4.0-arm64.apk > release/SIGNING-CERTIFICATE.txt
           python3 - <<'PY'
           from pathlib import Path
-          import zipfile, hashlib
-          p=Path('release/continuum-0.3.0-arm64.apk')
+          import zipfile, hashlib, os
+          p=Path('release/continuum-0.4.0-arm64.apk')
           with zipfile.ZipFile(p) as z:
               native=[n for n in z.namelist() if n.startswith('lib/') and n.endswith('.so')]
+              assert 'lib/arm64-v8a/libcontinuum_core.so' in native
               assert native and all(n.startswith('lib/arm64-v8a/') for n in native),native
               assert all(z.getinfo(n).compress_type==zipfile.ZIP_DEFLATED for n in native)
           size=p.stat().st_size
-          text=f'ARM64 APK: {size:,} bytes ({size/1000000:.2f} MB; {size/1048576:.2f} MiB).\nSHA256: {hashlib.sha256(p.read_bytes()).hexdigest()}\n'
-          print('::notice title=APK size::'+text.replace('\n','%0A'))
+          mode='provisioned key' if os.environ.get('CONTINUUM_KEYSTORE_PATH') else 'disposable preview key; stable signing NOT configured'
+          text=f'ARM64 APK: {size:,} bytes ({size/1000000:.2f} MB; {size/1048576:.2f} MiB).\nSHA256: {hashlib.sha256(p.read_bytes()).hexdigest()}\nSigning: {mode}\n'
+          print('::notice title=APK size and signing::'+text.replace('\n','%0A'))
           Path('release/APK-SIZE.txt').write_text(text)
           PY
       - name: Temporary protocol and website compatibility fixtures
@@ -69,7 +80,7 @@ jobs:
           echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' | sudo tee /etc/udev/rules.d/99-kvm4all.rules
           sudo udevadm control --reload-rules
           sudo udevadm trigger --name-match=kvm
-      - name: Real TUN DNS, HTTP, HTTPS, uploads, downloads, UDP and disconnect tests
+      - name: Real TUN DNS, HTTP, HTTPS, transfers, UDP and lifecycle regressions
         run: |
           set -o pipefail
           bash android/scripts/emulator-session.sh 2>&1 | tee android/emulator-boot.log
@@ -79,13 +90,13 @@ jobs:
           cp android/THIRD_PARTY.md android/LICENSE* android/release/
           cp android/third-party/libv2ray-sources.jar android/release/
           cp android/network-report.txt android/release/
-      - name: Upload complete APK only after successful tests
+      - name: Upload full staged-migration APK after successful tests
         if: github.event_name != 'pull_request' && github.ref == 'refs/heads/arena/f056ce38-my-small-project'
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          tag="continuum-0.3.0-preview-${GITHUB_RUN_NUMBER}"
-          gh release create "$tag" android/release/* --target "$GITHUB_SHA" --prerelease --title "Continuum 0.3 preview · ARM64 · build ${GITHUB_RUN_NUMBER}" --notes "Android 8+ ARM64. Proxied cached DoH, IPv4-answer compatibility default, HTTP/TLS hostname recovery, MTU settings and reduced idle checks. Real TUN tests cover DNS with server port 53 blocked, four protocols, website HTTPS, Host recovery, large upload/download, UDP and disconnect on API 35 x86_64. No physical ARM/Tehran latency, battery savings or long-duration claim. See network-report.txt for runner-only timings. Preview signer: previous builds may need uninstall, deleting settings. APK size/hash, exact application source and license references attached. Production subscription unchanged."
+          tag="continuum-0.4.0-preview-${GITHUB_RUN_NUMBER}"
+          gh release create "$tag" android/release/* --target "$GITHUB_SHA" --prerelease --title "Continuum 0.4 · Rust migration stage 1 · build ${GITHUB_RUN_NUMBER}" --notes "Android 8+ ARM64. Rust scheduling, cancellation-token, backoff and diagnostic policy through JNI; conditional subscriptions; default-network monitoring; local redacted reports. This is NOT a completed Rust migration: Java profile/config parsing and Android orchestration remain; Xray remains Go by design. Stable signing requires privately provisioned Actions secrets; APK-SIZE.txt states the actual mode. Existing previews may require uninstall. Rust/JVM tests and real API35 x86_64 TUN regressions pass; physical ARM, real mobile handoff, battery and latency improvements remain unverified."
       - name: Failure diagnostics
         if: failure()
         run: python3 android/scripts/ci-diagnostics.py
@@ -106,3 +117,4 @@ jobs:
             android/network-report.txt
             android/continuum-screen.png
             android/release/APK-SIZE.txt
+            android/release/SIGNING-CERTIFICATE.txt

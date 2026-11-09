@@ -3,17 +3,16 @@ package app.continuum;
 import android.content.*;
 import android.os.*;
 
-/** Visible UI subscribes to changes. No per-second Binder requests or background UI work. */
+/** Visible UI subscribes to changes; no background UI polling. */
 public final class StateClient {
     public volatile VpnStatus status=VpnStatus.offline();
-    public volatile String history="";
+    public volatile String history="",diagnostics="Connect, then use Check now to collect a local diagnostic snapshot.";
     private final Context context;
     private final Handler handler=new Handler(Looper.getMainLooper());
     private boolean observing,bound;
     private Messenger service;
     private final Messenger inbox=new Messenger(new Handler(Looper.getMainLooper(),message->{
-        if(message.what==TunnelService.STATE){status=VpnStatus.from(message.getData());history=message.getData().getString("history","");}
-        return true;
+        if(message.what==TunnelService.STATE){status=VpnStatus.from(message.getData());history=message.getData().getString("history","");diagnostics=message.getData().getString("diagnostics","");}return true;
     }));
     private final ServiceConnection connection=new ServiceConnection(){
         public void onServiceConnected(ComponentName name,IBinder binder){service=new Messenger(binder);request(TunnelService.STATE);}
@@ -35,10 +34,6 @@ public final class StateClient {
         context.startForegroundService(new Intent(context,TunnelService.class).setAction(TunnelService.START));
         if(observing){handler.removeCallbacks(rebind);handler.postDelayed(rebind,100);}
     }
-    public void disconnect(){
-        new SettingsStore(context).pause();
-        status=new VpnStatus("Disconnecting","Closing VPN resources",status.host,status.protocol,status.transport,-1,0,0,true,status.tunOpen,status.engineRunning);
-        context.startService(new Intent(context,TunnelService.class).setAction(TunnelService.STOP));
-    }
+    public void disconnect(){new SettingsStore(context).pause();status=new VpnStatus("Disconnecting","Closing VPN resources",status.host,status.protocol,status.transport,-1,0,0,true,status.tunOpen,status.engineRunning);context.startService(new Intent(context,TunnelService.class).setAction(TunnelService.STOP));}
     public void refresh(){if(status.running)context.startService(new Intent(context,TunnelService.class).setAction(TunnelService.REFRESH));}
 }

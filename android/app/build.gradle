@@ -1,4 +1,9 @@
 plugins { id 'com.android.application' }
+def targetAbi = providers.gradleProperty('targetAbi').getOrElse('arm64-v8a')
+def rustTask = tasks.register('buildRustCore', Exec) {
+    workingDir rootDir
+    commandLine 'bash', 'scripts/build-rust.sh', targetAbi
+}
 android {
     namespace 'app.continuum'
     compileSdk 35
@@ -6,26 +11,37 @@ android {
         applicationId 'app.continuum'
         minSdk 26
         targetSdk 35
-        versionCode 3
-        versionName '0.3.0-preview'
-        ndk { abiFilters.add(providers.gradleProperty('targetAbi').getOrElse('arm64-v8a')) }
+        versionCode 4
+        versionName '0.4.0-preview'
+        ndk { abiFilters.add(targetAbi) }
         testInstrumentationRunner 'androidx.test.runner.AndroidJUnitRunner'
-        buildConfigField 'String', 'BUILD_ABI', '"' + providers.gradleProperty('targetAbi').getOrElse('arm64-v8a') + '"'
+        buildConfigField 'String', 'BUILD_ABI', '"' + targetAbi + '"'
     }
     buildFeatures { buildConfig true }
     compileOptions { coreLibraryDesugaringEnabled true; sourceCompatibility JavaVersion.VERSION_17; targetCompatibility JavaVersion.VERSION_17 }
     packaging { jniLibs { useLegacyPackaging true } }
+    testOptions { unitTests.all { dependsOn rustTask; jvmArgs "-Djava.library.path=${rootDir}/rust-core/target/release" } }
+    signingConfigs {
+        if (System.getenv('CONTINUUM_KEYSTORE_PATH')) {
+            stable {
+                storeFile file(System.getenv('CONTINUUM_KEYSTORE_PATH'))
+                storePassword System.getenv('CONTINUUM_STORE_PASSWORD')
+                keyAlias System.getenv('CONTINUUM_KEY_ALIAS')
+                keyPassword System.getenv('CONTINUUM_KEY_PASSWORD')
+            }
+        }
+    }
     buildTypes {
         release {
             debuggable false
             minifyEnabled true
             shrinkResources true
             proguardFiles getDefaultProguardFile('proguard-android-optimize.txt'), 'proguard-rules.pro'
-            // Preview only: a privately retained signing identity is needed for production updates.
-            signingConfig signingConfigs.debug
+            signingConfig System.getenv('CONTINUUM_KEYSTORE_PATH') ? signingConfigs.stable : signingConfigs.debug
         }
     }
 }
+tasks.named('preBuild').configure { dependsOn rustTask }
 dependencies {
     coreLibraryDesugaring 'com.android.tools:desugar_jdk_libs:2.1.5'
     implementation files('libs/libv2ray.aar')
