@@ -4,7 +4,7 @@
 
 The user reported that Nyx preview 21 is rejected as an invalid package. **That installation issue is not resolved.** Do not describe the previous CI build as proof that this exact ARM64 package installs on the user's phone.
 
-Automatic preview releases have been disabled. Publication now requires an explicit `[publish-nyx]` release commit, which must not be used before routing acceptance and installation validation. No replacement APK has been published during this investigation.
+Automatic preview releases have been disabled, including the former `[publish-nyx]` marker path. No replacement APK has been published during this investigation. The newer universal candidate passed Android 8/10/15/16 and actual 16 KB emulator installation/startup checks; see [the exact compatibility evidence](nyx-android-compatibility.md). This does not establish the cause of the earlier physical-phone rejection.
 
 ### Exact artifact audit
 
@@ -18,7 +18,7 @@ Run [42668592456](https://github.com/asomethinggood-sys/My-small-project/actions
 - Android 15/API 35's package manager installed those exact bytes with an ARM64 ABI override on an x86 emulator. **This is not native ARM execution.**
 - Android 8/API 26 rejected that ABI override (`ABI arm64-v8a not supported on this device`) before the installation attempt. This was a harness limitation, not evidence of an invalid APK. Follow-up run [42670011233](https://github.com/asomethinggood-sys/My-small-project/actions/runs/42670011233) then performed normal installation: the x86 emulator reached native library extraction and returned `INSTALL_FAILED_NO_MATCHING_ABIS`. This is explicitly **not** successful ARM-device installation. The API35 exact-package install succeeded again.
 
-The phone model, Android version and exact install error are still needed to reproduce the user's failure. Do not blame a corrupted download, a signature conflict or ABI incompatibility without that evidence. The earlier 0.4 success does not diagnose this failure.
+The phone model is POCO X7 Pro; the Android/HyperOS version and detailed installer error are still needed to reproduce the user's failure. Do not blame a corrupted download, a signature conflict or ABI incompatibility without that evidence. The earlier 0.4 success does not diagnose this failure.
 
 ## Implemented routing path
 
@@ -46,7 +46,7 @@ The listener is loopback-only and caps request workers. API bodies and headers a
 
 - An approved, provisioned real upstream pool and its sustained health supervisor.
 - Trusted TLS deployment and app credential/session provisioning.
-- Android country selection, bounded lease renewal and fail-closed expiry/recovery integrated with the service.
+- Production wiring of the tested Android country selection, bounded lease renewal and fail-closed routing. The authenticated synthetic TLS integration now passes; that is not live provider deployment.
 - A real country selection from the phone with independent geography and UDP evidence, without disturbing a second user's/default connection.
 - Reproduction and resolution of the reported APK installation failure on the relevant Android/device configuration.
 

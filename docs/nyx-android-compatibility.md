@@ -17,7 +17,14 @@ The universal APK contains all four native architectures, including both Rust JN
 - Same-signer reinstall without clearing app data, release-mode home-screen startup (including Rust JNI), and actual UI navigation into the non-exported country screen.
 - Separate full Android TUN, authenticated country-session, renewal, switching and disconnect tests remain required. Package-manager acceptance is not a substitute for VPN traffic tests.
 
-These are configured gates, not a declaration that every run has passed. Check the workflow result for the exact source SHA. Intel emulator execution is not physical ARM execution. The original POCO/HyperOS installation error remains unconfirmed on hardware.
+All these gates passed in [run 42687844848](https://github.com/asomethinggood-sys/My-small-project/actions/runs/42687844848), source `0af2ec3c3e2bcc3628c0292676bbe4915e21f9cf`: all five compatibility jobs and the Android build/integration job are green. The 16 KB image reported `PAGE_SIZE=16384`. Counts: **21 Rust, 55 JVM and 10 Android instrumentation tests**. These results apply to this exact candidate, not arbitrary later builds. Intel emulator execution is not physical ARM execution. The original POCO/HyperOS installation error remains unconfirmed on hardware.
+
+| Exact candidate | Bytes | SHA-256 |
+|---|---:|---|
+| Universal | 143,832,708 | `c4a49e5955ab1b0cb23ba433d21eb6e2eb23dcf1440cf638e724ed3bde0befe5` |
+| ARM64 | 41,431,421 | `734b95c0ac5757c5a8908ab6d055f101f14cdc3aa4a998de42bf635abfe056a7` |
+
+The artifacts use the same ephemeral release certificate within this build. Same-build reinstall passed; cross-build update compatibility is not established. They remain CI candidates, not a published completed country service.
 
 ## Service and release limits
 

@@ -1,7 +1,7 @@
 name: Nyx Android client
 on:
   push:
-    paths: [android/**, .github/workflows/android.yml, scripts/egress_gateway.py, scripts/egress_control.py, scripts/egress_ingress.py, scripts/egress_sessions.py, scripts/egress_stream.py]
+    paths: [android/**, .github/workflows/android.yml, scripts/egress_gateway.py, scripts/egress_control.py, scripts/egress_ingress.py, scripts/egress_sessions.py, scripts/egress_stream.py, scripts/egress_supervisor.py]
   pull_request:
     paths: [android/**, .github/workflows/android.yml]
   workflow_dispatch:

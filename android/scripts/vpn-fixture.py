@@ -6,6 +6,7 @@ from scripts.egress_control import Controller
 from scripts.egress_gateway import Gateway
 from scripts.egress_ingress import LocalIngressPlane
 from scripts.egress_sessions import Sessions, Evidence
+from scripts.egress_supervisor import Supervisor
 root=pathlib.Path(os.environ['RUNNER_TEMP'])/'continuum-fixture';root.mkdir(exist_ok=True)
 def download(url,name):
     path=root/name;urllib.request.urlretrieve(url,path);return path
@@ -63,10 +64,11 @@ access_key=secrets.token_urlsafe(32)
 control=Controller(sessions,plane,{'android_fixture':access_key})
 gateway=Gateway(control,'fixture.example',{name:(identity,country_path) for name in sessions.pools},default_route=('/fixture','127.0.0.1',18888))
 threading.Thread(target=gateway.serve_forever,daemon=True).start()
-def refresh_fixture_evidence():
-    for pool in sessions.pools:
-        country=sessions.pools[pool]['country']
-        sessions.mark_ready(pool,Evidence(country,True,True,True,True,True,time.monotonic()+60),ticket=sessions.begin_probe(pool))
+def fixture_probe(country):
+    # Only this isolated test adapter supplies synthetic geography. Production
+    # adapters must measure the full path and independently verify exit country.
+    return lambda cancel: Evidence(country,True,True,True,True,True,time.monotonic()+60)
+supervisor=Supervisor(control,{pool:fixture_probe(row['country']) for pool,row in sessions.pools.items()},interval=10,timeout=3)
 try:
     logs=[]
     for index in range(3):
@@ -97,13 +99,16 @@ try:
     fixture={'countryService':'https://'+gateway.public_host,'countryUser':'android_fixture','countryKey':access_key,'geography':'synthetic_fixture_not_public_country_evidence'}
     private_file=root/'country-service.json';private_file.write_text(json.dumps(fixture));private_file.chmod(0o600)
     (root/'profiles.json').write_text(json.dumps(profiles))
-    refresh_fixture_evidence();last_refresh=time.monotonic()
+    deadline=time.monotonic()+5
+    while not all(row['ready'] for row in sessions.pools.values()):
+        supervisor.tick()
+        if time.monotonic()>=deadline:raise RuntimeError('Synthetic fixture supervisor unavailable')
+        time.sleep(.05)
     print('FIXTURE_READY',flush=True)
     while all(p.poll() is None for p in processes):
-        if time.monotonic()-last_refresh>=10:refresh_fixture_evidence();last_refresh=time.monotonic()
-        control.sweep()
-        time.sleep(2)
+        supervisor.tick()
+        time.sleep(.25)
     raise RuntimeError('Fixture process exited')
 finally:
-    control.close();gateway.shutdown();gateway.server_close()
+    supervisor.close();gateway.shutdown();gateway.server_close()
     for p in processes:p.terminate()
