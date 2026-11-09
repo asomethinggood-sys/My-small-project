@@ -1,0 +1,26 @@
+name: Inspect Android 8 candidate reinstall
+on:
+  push:
+    branches: [arena/f056ce38-my-small-project]
+    paths: [.github/workflows/compatibility-review.yml]
+permissions:
+  actions: read
+  contents: read
+jobs:
+  diagnostics:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - name: Read the saved reinstall result
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+        run: |
+          gh run download 42685556361 -n compatibility-api-26-x86-google_apis -D evidence
+          python3 - <<'PY'
+          from pathlib import Path
+          for name in ['update.txt','emulator.log']:
+              p=Path('evidence')/name
+              text=p.read_text(errors='replace')[-3000:] if p.exists() else 'Not reached'
+              print('::notice title=Android 8 '+name+'::'+text.replace('%','%25').replace('\r','%0D').replace('\n','%0A'))
+          PY
