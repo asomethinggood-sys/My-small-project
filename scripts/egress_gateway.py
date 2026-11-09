@@ -40,7 +40,7 @@ class Gateway(http.server.ThreadingHTTPServer):
             if (not re.fullmatch('/[a-zA-Z0-9_-]{1,64}', path) or host != '127.0.0.1'
                     or type(upstream_port) is not int or not 1024 <= upstream_port <= 65535):
                 raise ValueError('Private default ingress required')
-        self.slots = threading.BoundedSemaphore(32)
+        self.slots = threading.BoundedSemaphore(128)
         super().__init__(('127.0.0.1', port), Handler)
 
     def process_request(self, request, client_address):

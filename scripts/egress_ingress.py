@@ -13,8 +13,8 @@ import time
 
 
 class LocalIngressPlane:
-    def __init__(self, destinations, clock=time.monotonic, max_leases=32, max_flows=4):
-        if not 1 <= max_leases <= 128 or not 1 <= max_flows <= 16:
+    def __init__(self, destinations, clock=time.monotonic, max_leases=32, max_flows=64):
+        if not 1 <= max_leases <= 128 or not 1 <= max_flows <= 256:
             raise ValueError('Invalid ingress budget')
         self.destinations = dict(destinations)
         for host, port in self.destinations.values():

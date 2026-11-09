@@ -1,5 +1,8 @@
 plugins { id 'com.android.application' }
 def targetAbi = providers.gradleProperty('targetAbi').getOrElse('arm64-v8a')
+def supportedAbis = ['arm64-v8a', 'armeabi-v7a', 'x86_64', 'x86']
+def targetAbis = targetAbi == 'universal' ? supportedAbis : [targetAbi]
+if (!supportedAbis.containsAll(targetAbis)) throw new GradleException('Unsupported target ABI')
 def rustTask = tasks.register('buildRustCore', Exec) {
     workingDir rootDir
     commandLine 'bash', 'scripts/build-rust.sh', targetAbi
@@ -13,7 +16,7 @@ android {
         targetSdk 35
         versionCode 6
         versionName '0.6.0-candidate'
-        ndk { abiFilters.add(targetAbi) }
+        ndk { abiFilters.addAll(targetAbis) }
         testInstrumentationRunner 'androidx.test.runner.AndroidJUnitRunner'
         buildConfigField 'String', 'BUILD_ABI', '"' + targetAbi + '"'
     }

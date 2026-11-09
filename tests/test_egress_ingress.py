@@ -100,6 +100,29 @@ class IngressTests(unittest.TestCase):
         thread.join(3)
         self.assertFalse(thread.is_alive())
         self.assertEqual(received, payload)
+    def test_phone_parallel_flows_do_not_exhaust_four_connection_budget(self):
+        lease, _ = self.connect()
+        # Background push, DoH and browser sockets coexist on a real phone.
+        for index in range(16):
+            sock = socket.create_connection(self.plane.endpoint(lease.token), timeout=2)
+            self.sockets.append(sock)
+            sock.settimeout(2)
+            payload = ('flow-%d' % index).encode()
+            sock.sendall(payload)
+            self.assertEqual(sock.recv(100), payload)
+        self.control.disconnect('alice', self.key, lease.token)
+        for sock in self.sockets: self.assert_closed(sock)
+
+    def test_explicit_flow_budget_still_rejects_excess_connections(self):
+        self.plane.max_flows = 1
+        lease, first = self.connect()
+        extra = socket.create_connection(self.plane.endpoint(lease.token), timeout=2)
+        self.sockets.append(extra)
+        extra.settimeout(2)
+        self.assert_closed(extra)
+        first.sendall(b'not displaced')
+        self.assertEqual(first.recv(100), b'not displaced')
+
     def test_public_or_privileged_destinations_rejected(self):
         for endpoint in [('8.8.8.8',18888),('127.0.0.1',22),('::1',18888)]:
             with self.assertRaises(ValueError): LocalIngressPlane({'x': endpoint})

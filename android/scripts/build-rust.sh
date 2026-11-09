@@ -20,7 +20,12 @@ sdk="${ANDROID_HOME:-${ANDROID_SDK_ROOT:-}}"
 test -n "$sdk" || { echo 'Android SDK required'; exit 1; }
 ndk="$sdk/ndk/27.2.12479018"
 if [[ ! -d "$ndk" ]]; then "$sdk/cmdline-tools/latest/bin/sdkmanager" 'ndk;27.2.12479018'; fi
+abis=("$abi")
+if [[ "$abi" == universal ]]; then abis=(arm64-v8a armeabi-v7a x86_64 x86); fi
+for abi in "${abis[@]}"; do
 case "$abi" in
+  armeabi-v7a) target=armv7-linux-androideabi; compiler=armv7a-linux-androideabi26-clang ;;
+  x86) target=i686-linux-android; compiler=i686-linux-android26-clang ;;
   arm64-v8a) target=aarch64-linux-android; compiler=aarch64-linux-android26-clang ;;
   x86_64) target=x86_64-linux-android; compiler=x86_64-linux-android26-clang ;;
   *) echo "Unsupported ABI: $abi"; exit 1 ;;
@@ -32,3 +37,4 @@ export RUSTFLAGS="-C linker=$linker -C link-arg=-Wl,-z,max-page-size=16384"
 cargo +"$version" build --locked --release --manifest-path rust-core/Cargo.toml --target "$target"
 mkdir -p "app/src/main/jniLibs/$abi"
 cp "rust-core/target/$target/release/libcontinuum_core.so" "app/src/main/jniLibs/$abi/"
+done
