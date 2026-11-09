@@ -200,7 +200,7 @@ jobs:
         run: |
           python3 - <<'PY'
           from pathlib import Path
-          for name in ['install.txt','page-size.txt','MainActivity.txt','crashes.txt','accessibility.txt']:
+          for name in ['install.txt','update.txt','page-size.txt','MainActivity.txt','crashes.txt','accessibility.txt']:
               p=Path('android/compatibility')/name
               text=p.read_text(errors='replace')[-3000:] if p.exists() else 'Not reached'
               print('::notice title=Compatibility '+name+'::'+text.replace('%','%25').replace('\r','%0D').replace('\n','%0A'))

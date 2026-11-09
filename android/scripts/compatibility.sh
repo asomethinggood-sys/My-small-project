@@ -48,7 +48,9 @@ fi
 adb install --no-streaming "$APK" > "$DIR/install.txt" 2>&1
 # Same certificate/package upgrade must work without uninstalling app data.
 adb install --no-streaming -r "$APK" > "$DIR/update.txt" 2>&1
-adb logcat -c
+# Some API 26 images cannot clear an active logd buffer. Preserve those logs
+# and still enforce launch/process/UI/crash assertions; clearing is not a gate.
+if ! adb logcat -c; then echo '::warning::Could not clear emulator logs; retaining complete crash history'; fi
 adb shell am start -W -n app.nyx.vpn/app.continuum.MainActivity > "$DIR/MainActivity.txt" 2>&1
 sleep 3
 adb shell pidof app.nyx.vpn >> "$DIR/MainActivity.txt"
