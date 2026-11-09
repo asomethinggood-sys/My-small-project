@@ -105,7 +105,20 @@ def trial(namespace, upstream, initial):
         duration=1200
         provision=json.dumps({'countryService':'https://'+gateway.public_host,'countryUser':owner,'countryKey':key,'country':'DE','expires_at':int(time.time())+duration},separators=(',',':')).encode()
         encrypted=subprocess.run(['openssl','pkeyutl','-encrypt','-pubin','-inkey',str(ROOT/'config/trial-recipient.pub'),'-pkeyopt','rsa_padding_mode:oaep','-pkeyopt','rsa_oaep_md:sha256'],input=provision,capture_output=True,check=True).stdout
-        print('::notice title=Private trial encrypted provisioning::'+base64.b64encode(encrypted).decode(),flush=True)
+        ciphertext=base64.b64encode(encrypted).decode()
+        # GitHub buffers check annotations until job completion. Publish only
+        # ciphertext on the session branch so the owner can obtain it while the
+        # private trial is still alive. No URL/key/profile is public plaintext.
+        repository=os.environ['GITHUB_REPOSITORY']
+        branch=os.environ['GITHUB_REF_NAME']
+        if branch!='arena/f056ce38-my-small-project':raise ProbeError('trial_branch_rejected')
+        endpoint=f'repos/{repository}/contents/trial-handoff.json'
+        prior=subprocess.run(['gh','api',endpoint+'?ref='+branch],capture_output=True,text=True)
+        body={'message':'Publish encrypted private trial handoff','branch':branch,
+              'content':base64.b64encode(json.dumps({'run_id':os.environ['GITHUB_RUN_ID'],'ciphertext':ciphertext}).encode()).decode()}
+        if prior.returncode==0:body['sha']=json.loads(prior.stdout)['sha']
+        subprocess.run(['gh','api','--method','PUT',endpoint,'--input','-'],input=json.dumps(body),text=True,capture_output=True,check=True)
+        print('::notice title=Private trial encrypted provisioning::'+ciphertext,flush=True)
         print('::notice title=Private live trial::One-owner Germany trial ready; real geography quorum and UDP checks passed. Automatic shutdown in 20 minutes. Other countries unavailable.',flush=True)
         end=time.monotonic()+duration
         while time.monotonic()<end:
