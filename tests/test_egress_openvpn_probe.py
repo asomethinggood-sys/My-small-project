@@ -1,7 +1,7 @@
 import base64
 import unittest
 from unittest.mock import patch
-from scripts.egress_openvpn_probe import connected_address, classify_log, prepare
+from scripts.egress_openvpn_probe import connected_address, classify_log, prepare, assess_responses
 
 
 class OpenVPNProbeBoundaryTests(unittest.TestCase):
@@ -17,6 +17,17 @@ class OpenVPNProbeBoundaryTests(unittest.TestCase):
         self.assertEqual(classify_log('user=secret\nAUTH_FAILED secret'), 'authentication_rejected')
         self.assertEqual(classify_log('VERIFY ERROR depth=1 secret'), 'certificate_verification_failed')
         self.assertNotIn('secret', classify_log('secret'))
+
+    def test_country_needs_two_independent_matching_observations(self):
+        echo = {'ip': '8.8.4.4'}
+        geo = {'ip': '8.8.4.4', 'success': True, 'country_code': 'DE'}
+        self.assertFalse(assess_responses({0: echo, 2: geo})['country_verified'])
+        fallback = {'ip': '8.8.4.4', 'country': 'DE'}
+        self.assertTrue(assess_responses({0: echo, 2: geo, 3: fallback})['country_verified'])
+        fallback['country'] = 'US'
+        self.assertFalse(assess_responses({0: echo, 2: geo, 3: fallback})['country_verified'])
+        fallback.update(country='DE', ip='1.1.1.1')
+        self.assertFalse(assess_responses({0: echo, 2: geo, 3: fallback})['country_verified'])
 
     def test_requires_explicit_test_provider_credentials(self):
         for envelope in [{'provider': 'other', 'username': 'vpnbook', 'password': 'test'},

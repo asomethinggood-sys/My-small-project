@@ -109,7 +109,7 @@ verb 3
             outcome = json.loads(result.stdout)
             if result.returncode:
                 # Result contains only allowlisted metadata, never config or keys.
-                print(json.dumps({'local_fixture_failure': outcome}))
+                print('::error title=Nyx local OpenVPN fixture::' + json.dumps(outcome), file=sys.stderr)
                 raise RuntimeError('Local OpenVPN payload fixture failed')
         finally:
             for process in processes:

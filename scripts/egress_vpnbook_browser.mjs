@@ -130,7 +130,7 @@ if (report.live_probe) {
   for (const [name, status] of Object.entries(report.live_probe.endpoint_probes || {})) {
     console.log(`::notice title=Nyx HTTPS probe::${name}: ${status}`);
   }
-  console.log(`::notice title=Nyx bounded provider test::${report.live_probe.status}; stage=${report.live_probe.failed_stage || 'complete'}; daemon_alive=${report.live_probe.openvpn_alive_at_failure === true}; country_verified=${report.live_probe.country_verified === true}; UDP_DNS=${report.live_probe.udp_dns_passed === true}; host_routes_unchanged=${report.live_probe.host_main_routes_unchanged === true}`);
+  console.log(`::notice title=Nyx bounded provider test::${report.live_probe.status}; stage=${report.live_probe.failed_stage || 'complete'}; daemon_alive=${report.live_probe.openvpn_alive_at_failure === true}; country_verified=${report.live_probe.country_verified === true}; UDP_DNS=${report.live_probe.udp_dns_passed === true}; host_routes_unchanged=${report.live_probe.host_main_routes_unchanged === true}; drop_blocked=${report.live_probe.tunnel_drop_blocked === true}; country_observations=${(report.live_probe.observed_countries || []).join(',')}; IP_agreement=${report.live_probe.independent_ip_agreement === true}`);
 }
 for (const text of report.remaining_controls || []) {
   console.log(`::notice title=Nyx remaining control::${text.replace(/%/g, '%25').replace(/\r/g, '%0D').replace(/\n/g, '%0A')}`);
