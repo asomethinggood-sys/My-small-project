@@ -1,0 +1,13 @@
+{
+  "schema_version": 1,
+  "target_countries": ["US", "CA", "MX", "BR", "AR", "GB", "IE", "FR", "DE", "NL", "BE", "CH", "AT", "IT", "ES", "PT", "SE", "NO", "DK", "FI", "PL", "CZ", "RO", "TR", "JP", "KR", "SG", "IN", "AU", "NZ"],
+  "catalog_ttl_seconds": 900,
+  "providers": [
+    {"id": "vpngate", "discovery": "public_csv", "shared_use_approved": false, "blocker": "Volunteer logging disclosure and shared-use review required; live country availability unknown."},
+    {"id": "vpnbook", "discovery": "not_implemented", "shared_use_approved": false, "blocker": "Personal-use policy; public sharing permission and safe configuration retrieval unresolved."},
+    {"id": "proton", "discovery": "not_implemented", "shared_use_approved": false, "blocker": "Account, country entitlement and sharing permission required."},
+    {"id": "riseup", "discovery": "not_implemented", "shared_use_approved": false, "blocker": "Country selection and shared-use permission unverified."},
+    {"id": "warp", "discovery": "not_implemented", "shared_use_approved": false, "blocker": "No supported arbitrary-country selector established."},
+    {"id": "tor", "discovery": "not_implemented", "shared_use_approved": false, "blocker": "TCP-only alternative; not a full-traffic country VPN adapter."}
+  ]
+}

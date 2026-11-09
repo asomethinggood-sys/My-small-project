@@ -1,0 +1,13 @@
+{
+  "schema_version": 1,
+  "adapters": [
+    {"id":"vpngate-openvpn","provider":"vpngate","type":"openvpn","discovery":"implemented_public_csv","provisioning":"not_implemented","country_selection":"directory_claim_then_verify","udp":"unverified","shared_use":"review_required"},
+    {"id":"vpnbook-openvpn","provider":"vpnbook","type":"openvpn","discovery":"not_implemented","provisioning":"public_rotating_credentials_unverified","country_selection":"advertised_then_verify","udp":"unverified","shared_use":"permission_required"},
+    {"id":"vpnbook-wireguard","provider":"vpnbook","type":"wireguard","discovery":"not_implemented","provisioning":"verification_check_required","country_selection":"advertised_then_verify","udp":"unverified","shared_use":"permission_required"},
+    {"id":"warp","provider":"cloudflare","type":"warp","discovery":"not_implemented","provisioning":"not_implemented","country_selection":"not_supported_by_this_adapter","udp":"unverified","shared_use":"review_required"},
+    {"id":"psiphon","provider":"psiphon","type":"psiphon","discovery":"not_implemented","provisioning":"official_client_configuration_required","country_selection":"unverified","udp":"unverified","shared_use":"review_required"},
+    {"id":"proton-wireguard","provider":"proton","type":"wireguard","discovery":"not_implemented","provisioning":"account_required","country_selection":"account_entitlement_then_verify","udp":"unverified","shared_use":"permission_required"},
+    {"id":"riseup","provider":"riseup","type":"openvpn","discovery":"not_implemented","provisioning":"not_implemented","country_selection":"unverified","udp":"unverified","shared_use":"review_required"},
+    {"id":"tor","provider":"tor","type":"socks_tcp","discovery":"not_implemented","provisioning":"not_implemented","country_selection":"circuit_constraint_then_verify","udp":"unsupported","shared_use":"review_required"}
+  ]
+}

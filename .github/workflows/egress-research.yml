@@ -1,0 +1,81 @@
+name: Nyx bounded backend verification
+on:
+  push:
+    branches: [arena/f056ce38-my-small-project]
+    paths:
+      - .github/workflows/egress-research.yml
+      - scripts/egress*.py
+      - scripts/build-wireguard-tools.sh
+      - tests/egress*.py
+      - tests/test_egress*.py
+      - config/egress*.json
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: nyx-egress-research-${{ github.ref }}
+  cancel-in-progress: false
+jobs:
+  kernel:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - name: Unit tests
+        run: python3 -m unittest discover -s tests -p 'test_egress*.py' -v
+      - name: Install firewall tooling
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y --no-install-recommends nftables iptables
+      - name: Build pinned WireGuard tooling
+        run: bash scripts/build-wireguard-tools.sh
+      - name: Real encrypted kernel and lifecycle tests
+        run: |
+          mkdir -p .runtime/egress
+          sudo python3 tests/egress_pool_kernel.py .runtime/tool-src/wireguard-tools/src/wg | tee .runtime/egress/kernel-pool-manager.json
+          sudo python3 tests/egress_kernel.py --firewall legacy --wireguard .runtime/tool-src/wireguard-tools/src/wg | tee .runtime/egress/kernel-legacy.json
+          sudo python3 tests/egress_kernel.py --firewall nft --wireguard .runtime/tool-src/wireguard-tools/src/wg | tee .runtime/egress/kernel-nft.json
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: nyx-kernel-${{ github.run_id }}
+          retention-days: 3
+          path: .runtime/egress/kernel-*.json
+  xray:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - name: Fetch checksum-pinned Xray
+        run: bash scripts/download-binaries.sh .runtime/bin --xray-only
+      - name: Validate and exercise VLESS baseline (no public deployment)
+        run: |
+          python3 scripts/generate.py --host vpn.example.com
+          .runtime/bin/xray run -test -c .runtime/xray.json
+          .runtime/bin/xray run -test -c .runtime/client-test.json
+          python3 tests/integration.py
+  sources:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - name: Fetch bounded official-provider metadata
+        run: python3 scripts/egress_sources.py
+      - name: Fetch and parse live directory
+        id: directory
+        continue-on-error: true
+        run: timeout 60s python3 scripts/egress_catalog.py --live
+      - name: Publish sanitized measurements to job summary
+        if: always()
+        run: python3 scripts/egress_report.py
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: nyx-sources-${{ github.run_id }}
+          retention-days: 3
+          path: |
+            .runtime/egress/catalog.json
+            .runtime/egress/sources.json
+      - name: Preserve discovery failure in job status
+        if: steps.directory.outcome == 'failure'
+        run: exit 1
