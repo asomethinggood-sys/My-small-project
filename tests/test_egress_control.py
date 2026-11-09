@@ -79,6 +79,10 @@ class ControllerTests(unittest.TestCase):
         self.control.disconnect('alice', self.a, lease.token)
         self.now += 60
         self.control.connect('alice', self.a, 'DE')
+    def test_debug_representation_never_prints_session_credential(self):
+        lease = self.control.connect('alice', self.a, 'DE')
+        self.assertNotIn(lease.token, repr(lease))
+        self.assertNotIn(self.a, repr(self.control.credentials))
     def test_shutdown_closes_all_flows(self):
         self.control.connect('alice', self.a, 'DE')
         self.control.close()

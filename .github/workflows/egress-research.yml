@@ -24,6 +24,25 @@ concurrency:
   group: nyx-egress-research-${{ github.ref }}
   cancel-in-progress: false
 jobs:
+  recover-android:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    permissions:
+      contents: read
+      actions: read
+    steps:
+      - uses: actions/checkout@v4
+      - name: Retrieve compiler diagnostics
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh run download 42663582749 --repo asomethinggood-sys/My-small-project --name android-validation-18 --dir .runtime/android-previous
+          python3 - <<'PY'
+          from pathlib import Path
+          p=next(Path('.runtime/android-previous').rglob('build-log.txt'))
+          text=p.read_text(errors='replace')[-3500:]
+          print('::notice title=Nyx build diagnostic::'+text.replace('%','%25').replace('\n','%0A').replace('\r','%0D'))
+          PY
   psiphon-local:
     runs-on: ubuntu-24.04
     timeout-minutes: 10

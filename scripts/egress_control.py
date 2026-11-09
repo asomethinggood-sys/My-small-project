@@ -5,7 +5,7 @@ requests here; transport authentication is still required. The data-plane adapte
 must implement install/revoke (including closure of existing flows) and fail_closed.
 No provider is registered/approved by this module. Secrets never enter catalogs.
 """
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 import hashlib
 import re
 import secrets
@@ -19,7 +19,7 @@ class Denied(ValueError):
 @dataclass(frozen=True)
 class Lease:
     owner: str
-    token: str
+    token: str = field(repr=False)
     pool: str
     expires_at: float
     generation: int
