@@ -9,6 +9,7 @@ import json
 from pathlib import Path
 import re
 import socket
+import sys
 import urllib.parse
 import urllib.request
 import zipfile
@@ -115,7 +116,27 @@ def inspect_bundle(blob):
         return report
 
 
+def inspect_profile(blob):
+    if len(blob) > 128 * 1024:
+        raise ValueError('Profile size budget exceeded')
+    buffer = io.BytesIO()
+    with zipfile.ZipFile(buffer, 'w') as archive:
+        archive.writestr('profile-udp.ovpn', blob)
+    return inspect_bundle(buffer.getvalue())
+
+
 def main():
+    if sys.argv[1:] in (['--profile-stdin'], ['--bundle-stdin']):
+        try:
+            limit = 128 * 1024 if sys.argv[1] == '--profile-stdin' else LIMIT
+            blob = sys.stdin.buffer.read(limit + 1)
+            if len(blob) > limit:
+                raise ValueError('Download size budget exceeded')
+            result = inspect_profile(blob) if sys.argv[1] == '--profile-stdin' else inspect_bundle(blob)
+        except (OSError, ValueError, zipfile.BadZipFile):
+            result = {'status': 'download_validation_error', 'connection_tested': False}
+        print(json.dumps(result))
+        return
     report = {'provider': 'vpnbook', 'type': 'openvpn', 'advertised_country': 'DE',
               'shared_use_approved': False, 'connection_tested': False}
     try:

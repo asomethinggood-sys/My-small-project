@@ -1,6 +1,8 @@
 // Public-page browser acquisition probe. No login, CAPTCHA solving or VPN connection.
 import { chromium } from '../.runtime/browser/node_modules/playwright/index.mjs';
 import fs from 'node:fs/promises';
+import {spawnSync} from 'node:child_process';
+import {GERMAN_SERVER_LABEL, UDP53_LABEL, downloadFormat, allowedSource} from './egress_browser_policy.mjs';
 
 const report = {provider: 'vpnbook', protocol: 'openvpn', country: 'DE',
   connection_tested: false, status: 'not_started'};
@@ -10,7 +12,7 @@ try {
   await context.route('**/*', async route => {
     const url = new URL(route.request().url());
     // Do not fetch ads/trackers or interact with an external verification service.
-    if (url.protocol === 'https:' && ['vpnbook.com', 'www.vpnbook.com'].includes(url.hostname))
+    if (allowedSource(url.href))
       return route.continue();
     return route.abort();
   });
@@ -38,10 +40,10 @@ try {
   if (!button) {
     // Current official UI is a server selector followed by protocol selectors,
     // rather than a static ZIP link. Use those controls without guessing APIs.
-    const server = page.getByRole('button', {name: /Germany Server 1.*de20\\.vpnbook\\.com/i});
+    const server = page.getByRole('button', {name: GERMAN_SERVER_LABEL});
     if (await server.count() === 1) {
       await server.click({timeout: 10000});
-      const protocol = page.getByRole('button', {name: /UDP 53/i});
+      const protocol = page.getByRole('button', {name: UDP53_LABEL});
       if (await protocol.count() === 1) button = protocol;
     }
   }
@@ -63,18 +65,28 @@ try {
       if (!download) report.status = 'download_not_started_or_verification_required';
       else {
         const filename = download.suggestedFilename();
-        if (!/^[A-Za-z0-9_.-]{1,100}\.(zip|ovpn)$/i.test(filename)) {
+        if (!downloadFormat(filename)) {
           await download.cancel(); report.status = 'unexpected_download_name';
         } else {
           const stream = await download.createReadStream();
           let size = 0;
+          const chunks = [];
           for await (const chunk of stream) {
             size += chunk.length;
             if (size > 2 * 1024 * 1024) {await download.cancel(); break;}
+            chunks.push(chunk);
           }
           report.status = size > 2 * 1024 * 1024 ? 'download_size_rejected' : 'download_received_unverified';
           report.bytes = size;
-          report.format = filename.toLowerCase().endsWith('.zip') ? 'zip' : 'ovpn';
+          report.format = downloadFormat(filename);
+          if (size <= 2 * 1024 * 1024) {
+            const result = spawnSync('python3', ['-m', 'scripts.egress_vpnbook',
+              report.format === 'zip' ? '--bundle-stdin' : '--profile-stdin'],
+              {input: Buffer.concat(chunks), encoding: 'utf8', timeout: 20000,
+                maxBuffer: 65536, env: {PATH: process.env.PATH}});
+            if (result.status === 0) report.inspection = JSON.parse(result.stdout);
+            else report.inspection = {status: 'inspection_process_failed'};
+          }
           await download.delete();
         }
       }
@@ -88,6 +100,10 @@ try {
 await fs.mkdir('.runtime/egress', {recursive: true});
 await fs.writeFile('.runtime/egress/vpnbook-browser.json', JSON.stringify(report, null, 2) + '\n');
 console.log(`::notice title=Nyx browser acquisition::${report.status}; German endpoint visible=${report.has_german_endpoint || false}`);
+if (report.inspection) {
+  console.log(`::notice title=Nyx downloaded configuration::${report.inspection.status}`);
+  if (report.inspection.reason) console.log(`::notice title=Nyx configuration policy::${report.inspection.reason}`);
+}
 for (const item of report.controls || []) {
   const text = item.text.replace(/%/g, '%25').replace(/\r/g, '%0D').replace(/\n/g, '%0A');
   console.log(`::notice title=Nyx download control::${text}`);
