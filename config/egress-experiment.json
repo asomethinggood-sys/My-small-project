@@ -1,0 +1,12 @@
+{
+  "schema_version": 1,
+  "purpose": "bounded_private_provider_comparison",
+  "rounds": 2,
+  "minimum_consecutive_successes": 2,
+  "sample_timeout_seconds": 210,
+  "candidates": [
+    {"id": "vpnbook-de20-udp53", "provider": "vpnbook", "server": "de20", "country": "DE", "port": 53},
+    {"id": "vpnbook-de20-udp25000", "provider": "vpnbook", "server": "de20", "country": "DE", "port": 25000},
+    {"id": "vpnbook-de220-udp53", "provider": "vpnbook", "server": "de220", "country": "DE", "port": 53}
+  ]
+}

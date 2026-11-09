@@ -2,9 +2,11 @@
 import { chromium } from '../.runtime/browser/node_modules/playwright/index.mjs';
 import fs from 'node:fs/promises';
 import {spawnSync} from 'node:child_process';
-import {GERMAN_SERVER_LABEL, UDP53_LABEL, CONFIG_DOWNLOAD_LABEL, downloadFormat, allowedSource} from './egress_browser_policy.mjs';
+import {candidatePolicy, CONFIG_DOWNLOAD_LABEL, downloadFormat, allowedSource} from './egress_browser_policy.mjs';
 
-const report = {provider: 'vpnbook', protocol: 'openvpn', country: 'DE',
+const candidate = candidatePolicy(process.env.NYX_VPNBOOK_SERVER || 'de20', process.env.NYX_VPNBOOK_PORT || '53');
+const report = {candidate_id: candidate.id, server: candidate.server, port: candidate.port,
+  provider: 'vpnbook', protocol: 'openvpn', country: 'DE',
   connection_tested: false, status: 'not_started'};
 const browser = await chromium.launch({headless: true});
 try {
@@ -20,32 +22,20 @@ try {
   await page.goto('https://www.vpnbook.com/freevpn/openvpn', {waitUntil: 'networkidle', timeout: 30000});
   // Wait for hydration via visible controls, not a long-lived background process.
   await page.locator('body').waitFor();
-  report.has_german_endpoint = await page.getByText('de20.vpnbook.com', {exact: true}).count() > 0;
+  report.has_german_endpoint = await page.getByText(candidate.hostname, {exact: true}).count() > 0;
   const controls = await page.locator('button, a[download], select').evaluateAll(elements =>
     elements.map(el => ({tag: el.tagName, text: (el.textContent || '').trim().replace(/\s+/g, ' ').slice(0, 100)}))
       .filter(el => /download|openvpn|udp|tcp|germany|de20/i.test(el.text)).slice(0, 30));
   // Export only allowlisted control labels, never document text/credentials/configs.
   report.controls = controls.filter(item => !/password|username|private|key/i.test(item.text));
-  const germany = page.getByText('de20.vpnbook.com', {exact: true}).first();
   let button;
-  if (await germany.count()) {
-    for (let depth = 1; depth <= 5; depth++) {
-      const ancestor = germany.locator('xpath=' + Array(depth).fill('..').join('/'));
-      const choices = ancestor.getByRole('button', {name: /download/i});
-      if (await choices.count() === 1) {button = choices.first(); break;}
-      const links = ancestor.getByRole('link', {name: /download/i});
-      if (await links.count() === 1) {button = links.first(); break;}
-    }
-  }
-  if (!button) {
-    // Current official UI is a server selector followed by protocol selectors,
-    // rather than a static ZIP link. Use those controls without guessing APIs.
-    const server = page.getByRole('button', {name: GERMAN_SERVER_LABEL});
-    if (await server.count() === 1) {
-      await server.click({timeout: 10000});
-      const protocol = page.getByRole('button', {name: UDP53_LABEL});
-      if (await protocol.count() === 1) button = protocol;
-    }
+  // Always select the requested server and protocol. Never infer a candidate
+  // from a generic ancestor's download control or a site's default selection.
+  const server = page.getByRole('button', {name: candidate.serverLabel});
+  if (await server.count() === 1) {
+    await server.click({timeout: 10000});
+    const protocol = page.getByRole('button', {name: candidate.protocolLabel});
+    if (await protocol.count() === 1) button = protocol;
   }
   if (!button) report.status = 'no_unambiguous_german_download_control';
   else {
@@ -101,6 +91,7 @@ try {
             const password = bodyText.match(/Password\s*:\s*([A-Za-z0-9_-]{4,64})\b/i);
             if (username && password && !/loading|hidden/i.test(password[1])) {
               const input = JSON.stringify({provider: 'vpnbook', username: 'vpnbook', password: password[1],
+                expected_server: candidate.server, expected_port: candidate.port,
                 profile_base64: Buffer.concat(chunks).toString('base64')});
               const result = spawnSync('sudo', ['-n', 'python3', '-m', 'scripts.egress_openvpn_probe'],
                 {input, encoding: 'utf8', timeout: 125000, maxBuffer: 65536, env: {PATH: process.env.PATH}});

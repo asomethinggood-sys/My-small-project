@@ -21,7 +21,7 @@ jobs:
   browser-acquisition:
     needs: kernel
     runs-on: ubuntu-24.04
-    timeout-minutes: 10
+    timeout-minutes: 20
     steps:
       - uses: actions/checkout@v4
       - name: Test browser acquisition policy
@@ -34,16 +34,16 @@ jobs:
         run: |
           sudo apt-get install -y --no-install-recommends openvpn iptables
           sudo python3 tests/egress_tun_migration.py
-      - name: Probe official German download and isolated exit (no public service)
-        env:
-          NYX_PROVIDER_PROBE: 'true'
-        run: timeout 210s node scripts/egress_vpnbook_browser.mjs
+      - name: Compare bounded German candidates on this runner (no public service)
+        run: timeout 930s python3 -m scripts.egress_batch
       - uses: actions/upload-artifact@v4
         if: always()
         with:
           name: nyx-browser-${{ github.run_id }}
           retention-days: 3
-          path: .runtime/egress/vpnbook-browser.json
+          path: |
+            .runtime/egress/vpnbook-browser.json
+            .runtime/egress/comparison.json
   kernel:
     runs-on: ubuntu-24.04
     timeout-minutes: 15

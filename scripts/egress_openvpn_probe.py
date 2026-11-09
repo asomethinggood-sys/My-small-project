@@ -65,6 +65,20 @@ def prepare(envelope):
     if not remote:
         raise ValueError('Unsupported remote syntax')
     hostname = remote[1]
+    expected_server = envelope.get('expected_server')
+    expected_port = envelope.get('expected_port')
+    if expected_server is not None:
+        if expected_server not in ('de20', 'de220') or type(expected_port) is not int or expected_port not in (53, 25000):
+            raise ValueError('Invalid expected candidate')
+        if int(remote[2]) != expected_port:
+            raise ValueError('Downloaded protocol port does not match selection')
+        expected_host = expected_server + '.vpnbook.com'
+        if hostname.lower() != expected_host:
+            address = str(global_ip(hostname))
+            expected_addresses = {str(global_ip(item[4][0])) for item in
+                                  socket.getaddrinfo(expected_host, expected_port, socket.AF_INET, socket.SOCK_DGRAM)}
+            if address not in expected_addresses:
+                raise ValueError('Downloaded endpoint does not match selection')
     if re.fullmatch(r'de(?:20|220)\.vpnbook\.com', hostname.lower()):
         addresses = sorted({str(global_ip(item[4][0])) for item in
                             socket.getaddrinfo(hostname, int(remote[2]), socket.AF_INET, socket.SOCK_DGRAM)})
@@ -77,6 +91,8 @@ def prepare(envelope):
     parsed = sanitize(text)
     if parsed['transport'] != 'udp' or parsed['endpoint_port'] not in (53, 25000):
         raise ValueError('This bounded probe only accepts advertised UDP ports')
+    if expected_server is not None:
+        parsed['candidate_id'] = f'vpnbook-{expected_server}-udp{expected_port}'
     return parsed
 
 
@@ -156,6 +172,8 @@ def probe(envelope, metadata_fetcher=None):
     token = uuid.uuid4().hex[:8]
     ns, device = 'nyxo-' + token, 'tun' + token
     result = {'provider': 'vpnbook', 'advertised_country': 'DE', 'shared_service': False,
+              'candidate_id': parsed.get('candidate_id', 'local-fixture-or-unspecified'),
+              'endpoint_port': parsed['endpoint_port'],
               'status': 'not_connected', 'country_verified': False, 'connection_tested': True}
     namespace_created, resolver_created, moved = False, False, False
     process = None

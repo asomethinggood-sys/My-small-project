@@ -44,6 +44,14 @@ class OpenVPNProbeBoundaryTests(unittest.TestCase):
                 prepare(envelope)
         resolver.assert_not_called()
 
+    def test_selected_server_and_port_must_match_download(self):
+        for remote in ['remote de220.vpnbook.com 53\n', 'remote de20.vpnbook.com 25000\n']:
+            envelope = {'provider': 'vpnbook', 'username': 'vpnbook', 'password': 'test',
+                        'expected_server': 'de20', 'expected_port': 53,
+                        'profile_base64': base64.b64encode(remote.encode()).decode()}
+            with self.assertRaises(ValueError):
+                prepare(envelope)
+
     def test_numeric_private_remote_rejected_before_sanitizer(self):
         envelope = {'provider': 'vpnbook', 'username': 'vpnbook', 'password': 'test',
                     'profile_base64': base64.b64encode(b'remote 169.254.169.254 53\n').decode()}
