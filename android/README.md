@@ -1,8 +1,16 @@
-# Continuum — Android VPN, Rust migration stage one
+# Nyx VPN — Android preview with Rust core policy
+
+[**Download Nyx 0.5 ARM64 APK — 19.23 MB**](https://github.com/asomethinggood-sys/My-small-project/releases/download/nyx-0.5.0-preview-21/nyx-0.5.0-arm64.apk)
+
+Nyx installs alongside Continuum as `app.nyx.vpn`. Custom night interface,
+reduced-motion-aware connection animation, searchable discovery for 30 target
+countries, and unchanged default subscription. **Country routing is not deployed:
+there are zero selectable shared-provider exits.** Discovery is metadata only.
+See [Nyx build, tests, limitations and signing](../docs/nyx-0.5.md).
 
 Original native Android UI and real Xray TUN engine, not a v2rayNG fork. Android 8+.
 
-## Download
+## Previous working Continuum release
 
 [Full 0.4 ARM64 APK — 19.23 MB](https://github.com/asomethinggood-sys/My-small-project/releases/download/continuum-0.4.0-preview-17/continuum-0.4.0-arm64.apk)
 

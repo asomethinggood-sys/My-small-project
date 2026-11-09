@@ -1,5 +1,23 @@
 # Nyx VPN 0.5 preview
 
+## Download and verification
+
+[**Full Nyx 0.5 ARM64 APK**](https://github.com/asomethinggood-sys/My-small-project/releases/download/nyx-0.5.0-preview-21/nyx-0.5.0-arm64.apk)
+
+- Android 8+ ARM64; package `app.nyx.vpn`.
+- **19,233,987 bytes** (19.23 MB / 18.34 MiB).
+- SHA-256: `01b94c200b371e6763dd3b9a3100f6770708f6b71dccc4b7304678eae5954895`.
+- Source: `b57b1fa3bbca540e96194a9cc25fd9632144590e`.
+- [Successful Android run 42666469586](https://github.com/asomethinggood-sys/My-small-project/actions/runs/42666469586): **20 Rust, 47 JVM and 7 Android instrumentation tests**, debug/release lint, ARM64 build, and **40 real TUN network checks** across four protocol fixtures.
+- Backend: **99 Python tests and 4 browser-policy tests**, plus real local encrypted fixtures; see runner 42665056596.
+- **Disposable preview signing certificate.** Stable signing secrets are not configured. A future preview may require uninstalling this preview; Continuum remains a separate app. No credentials need to be provided in chat.
+
+[Home screenshot](https://github.com/asomethinggood-sys/My-small-project/releases/download/nyx-0.5.0-preview-21/nyx-home.png) · [Locations screenshot](https://github.com/asomethinggood-sys/My-small-project/releases/download/nyx-0.5.0-preview-21/nyx-locations.png)
+
+Visual review caught an unrelated Pixel Launcher ANR obscuring the initial emulator captures. Those two screenshots were removed from build 20. Build 21 stops only that emulator launcher and requires Nyx window focus before capture; its clean screenshots were reviewed. Application errors are not globally hidden or suppressed.
+
+The release includes corresponding source, native/runtime licenses, signing information and exact validation totals. These tests do not establish physical ARM, Tehran latency or long-duration availability.
+
 ## What this build is
 
 A standalone `app.nyx.vpn` Android application built from the working Continuum Android integration. It installs alongside Continuum and does not migrate or overwrite its private settings. Android still permits only one active VPN at a time. The default project subscription URL remains unchanged.

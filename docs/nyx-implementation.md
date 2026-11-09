@@ -1,6 +1,15 @@
 # Nyx VPN: implementation status and server contract
 
-## Current: candidate comparison and local Psiphon transport
+## Current: Nyx preview and private per-user transport
+
+See `docs/nyx-0.5.md` for the new Android preview, public discovery metadata,
+authenticated lease controls and concrete private ingress transport. **99 Python
+tests pass**, including real-socket revocation/expiry tests. The controller plus
+private ingress also passes TCP and framed UDP through the real local Xray/WireGuard
+fixture. Public TLS/session API deployment and approved provider pools remain
+unfinished; no selectable country service is claimed.
+
+## Earlier: candidate comparison and local Psiphon transport
 
 See `docs/nyx-comparison-and-psiphon.md`. A six-sample comparison on one runner
 found **DE220/UDP53 passed 2/2 complete checks**, while DE20/UDP53 passed 1/2 and
