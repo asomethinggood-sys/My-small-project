@@ -2,7 +2,7 @@ from pathlib import Path
 import xml.etree.ElementTree as ET
 
 def annotation(title,text):
-    print('::error title='+title+'::'+text[-14000:].replace('%','%25').replace('\n','%0A').replace('\r','%0D'))
+    print('::error title='+title+'::'+text[-3500:].replace('%','%25').replace('\n','%0A').replace('\r','%0D'))
 for p in Path('android/app/build').rglob('*.xml'):
     if 'test-results' not in str(p) and 'lint-results' not in p.name: continue
     try:

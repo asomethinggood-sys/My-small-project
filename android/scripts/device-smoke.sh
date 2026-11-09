@@ -26,3 +26,5 @@ from pathlib import Path
 print('::notice title=Runner network checks (not Tehran or battery evidence)::'+Path('network-report.txt').read_text()[-16000:].replace('%','%25').replace('\n','%0A').replace('\r','%0D'))
 PY
 adb pull /sdcard/Download/continuum-screen.png continuum-screen.png || true
+adb pull /sdcard/Download/nyx-home.png release/nyx-home.png
+adb pull /sdcard/Download/nyx-locations.png release/nyx-locations.png

@@ -28,6 +28,13 @@ public class NyxUiTest {
             assertEquals(before,new SettingsStore(context).load().toString());
         }finally{inst.runOnMainSync(screen::finish);}
     }
+    @Test public void designSnapshots()throws Exception{
+        android.app.Instrumentation inst=InstrumentationRegistry.getInstrumentation();Context context=inst.getTargetContext();
+        Activity screen=inst.startActivitySync(new Intent(context,MainActivity.class).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK));
+        try{inst.waitForIdleSync();Thread.sleep(1200);try(ParcelFileDescriptor fd=inst.getUiAutomation().executeShellCommand("screencap -p /sdcard/Download/nyx-home.png")){new java.io.FileInputStream(fd.getFileDescriptor()).readAllBytes();}}finally{inst.runOnMainSync(screen::finish);}
+        Activity locations=inst.startActivitySync(new Intent(context,LocationsActivity.class).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK));
+        try{inst.waitForIdleSync();Thread.sleep(600);try(ParcelFileDescriptor fd=inst.getUiAutomation().executeShellCommand("screencap -p /sdcard/Download/nyx-locations.png")){new java.io.FileInputStream(fd.getFileDescriptor()).readAllBytes();}}finally{inst.runOnMainSync(locations::finish);}
+    }
     @Test public void customOrbitHandlesEveryPhaseAndReducedMotion()throws Exception{
         android.app.Instrumentation inst=InstrumentationRegistry.getInstrumentation();Context context=inst.getTargetContext();
         Activity screen=inst.startActivitySync(new Intent(context,MainActivity.class).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK));

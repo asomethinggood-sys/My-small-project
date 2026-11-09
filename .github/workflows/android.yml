@@ -84,6 +84,10 @@ jobs:
         run: |
           set -o pipefail
           bash android/scripts/emulator-session.sh 2>&1 | tee android/emulator-boot.log
+      - name: Reviewable emulator UI previews
+        run: |
+          python3 -m pip install --quiet Pillow==11.3.0
+          python3 android/scripts/ui-preview.py
       - name: Corresponding source and licenses
         run: |
           git archive --format=tar.gz --output=android/release/nyx-source.tar.gz HEAD android
