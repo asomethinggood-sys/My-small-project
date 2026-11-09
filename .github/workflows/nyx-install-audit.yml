@@ -35,6 +35,17 @@ jobs:
         env:
           AUDIT_API: ${{ matrix.api }}
         run: bash android/scripts/install-audit.sh
+      - name: Summarize audit independently of SDK output
+        if: always()
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          d=Path('.runtime/install-audit')
+          for name in ['install.txt','signature.txt','manifest.txt','emulator.log']:
+            p=d/name
+            text=p.read_text(errors='replace')[-2500:] if p.exists() else 'Not reached'
+            print('::notice title=Audit '+name+'::'+text.replace('%','%25').replace('\n','%0A').replace('\r','%0D'))
+          PY
       - uses: actions/upload-artifact@v4
         if: always()
         with:

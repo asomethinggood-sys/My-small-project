@@ -24,6 +24,28 @@ concurrency:
   group: nyx-egress-research-${{ github.ref }}
   cancel-in-progress: false
 jobs:
+  recover-install-audit:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    permissions:
+      contents: read
+      actions: read
+    steps:
+      - uses: actions/checkout@v4
+      - name: Retrieve exact published APK audit details
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh run download 42668592456 --repo asomethinggood-sys/My-small-project --dir .runtime/previous-install
+          python3 - <<'PY'
+          from pathlib import Path
+          for api in [26,35]:
+            root=Path('.runtime/previous-install')/f'nyx-install-audit-api-{api}'
+            for name in ['install.txt','emulator.log','manifest.txt']:
+              matches=list(root.rglob(name))
+              text=matches[0].read_text(errors='replace')[-2500:] if matches else 'Not reached'
+              print(f'::notice title=Audit API{api} {name}::'+text.replace('%','%25').replace('\n','%0A').replace('\r','%0D'))
+          PY
   psiphon-local:
     runs-on: ubuntu-24.04
     timeout-minutes: 10
