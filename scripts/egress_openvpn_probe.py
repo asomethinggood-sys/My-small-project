@@ -44,6 +44,11 @@ def run(*argv, input=None, timeout=10):
     except (OSError, subprocess.TimeoutExpired):
         raise ProbeError('command_failed') from None
     if result.returncode:
+        if 'curl' in argv:
+            code = {6: 'dns_failed', 7: 'connect_failed', 22: 'http_error', 28: 'timeout',
+                    35: 'tls_handshake_failed', 60: 'certificate_verification_failed',
+                    63: 'response_size_rejected'}.get(result.returncode, 'https_probe_failed')
+            raise ProbeError(code)
         raise ProbeError('command_failed')
     return result.stdout
 
@@ -127,7 +132,7 @@ def classify_log(text):
     return 'connection_not_established'
 
 
-def probe(envelope):
+def probe(envelope, metadata_fetcher=None):
     if os.geteuid() != 0:
         raise ValueError('Root required for isolated test')
     parsed = prepare(envelope)
@@ -183,7 +188,7 @@ def probe(envelope):
             stage = 'configure_tun'
             run('ip', '-n', ns, 'link', 'set', device, 'name', 'nyx-vpn')
             run('ip', '-n', ns, 'addr', 'add', address + '/32', 'dev', 'nyx-vpn')
-            run('ip', '-n', ns, 'link', 'set', 'nyx-vpn', 'up')
+            run('ip', '-n', ns, 'link', 'set', 'nyx-vpn', 'mtu', '1280', 'up')
             run('ip', '-n', ns, 'route', 'add', 'default', 'dev', 'nyx-vpn')
             process.send_signal(signal.SIGCONT)
             paused = False
@@ -192,22 +197,36 @@ def probe(envelope):
             if udp.strip() != 'dns-udp-ok':
                 raise ProbeError('udp_probe_failed')
             result['udp_dns_passed'] = True
-            results = []
+            results = {}
+            result['endpoint_probes'] = {}
             for index, url in enumerate(['https://api.ipify.org?format=json', 'https://ifconfig.co/json', 'https://ipwho.is/']):
                 stage = ['https_ip_echo', 'https_geo_first', 'https_geo_second'][index]
-                body = run('ip', 'netns', 'exec', ns, 'curl', '--fail', '--silent', '--show-error',
-                           '--connect-timeout', '5', '--max-time', '10', '--max-filesize', '32768',
-                           '--proto', '=https', '--noproxy', '*', url, timeout=12)
-                if len(body) > 32768:
-                    raise ProbeError('probe_response_rejected')
-                results.append(json.loads(body))
-            addresses = [str(global_ip(item.get('ip', ''))) for item in results]
-            countries = [results[1].get('country_iso'), results[2].get('country_code')]
-            agreement = len(set(addresses)) == 1 and countries == ['DE', 'DE'] and results[2].get('success') is True
+                try:
+                    if metadata_fetcher is not None:
+                        # Injection is Python-only for isolated local fixtures.
+                        body = metadata_fetcher(url)
+                    else:
+                        text = run('ip', 'netns', 'exec', ns, 'curl', '--ipv4', '--fail', '--silent', '--show-error',
+                                   '--connect-timeout', '4', '--max-time', '8', '--max-filesize', '32768',
+                                   '--proto', '=https', '--noproxy', '*', url, timeout=10)
+                        if len(text) > 32768:
+                            raise ProbeError('probe_response_rejected')
+                        body = json.loads(text)
+                    if not isinstance(body, dict) or not isinstance(body.get('ip'), str):
+                        raise ValueError('Invalid response shape')
+                    global_ip(body.get('ip', ''))
+                    results[index] = body
+                    result['endpoint_probes'][stage] = 'passed'
+                except (ProbeError, ValueError) as error:
+                    result['endpoint_probes'][stage] = str(error) if isinstance(error, ProbeError) else 'invalid_response'
+            addresses = [str(global_ip(item['ip'])) for item in results.values()]
+            countries = [results.get(1, {}).get('country_iso'), results.get(2, {}).get('country_code')]
+            ip_agreement = len(addresses) >= 2 and len(set(addresses)) == 1
+            agreement = ip_agreement and countries == ['DE', 'DE'] and results.get(2, {}).get('success') is True
             result.update(status='german_exit_observed' if agreement else 'exit_unverified_or_wrong_country',
-                          country_verified=agreement, independent_ip_agreement=len(set(addresses)) == 1,
+                          country_verified=agreement, independent_ip_agreement=ip_agreement,
                           observed_countries=[c if isinstance(c, str) and re.fullmatch('[A-Z]{2}', c) else 'unknown' for c in countries],
-                          https_and_dns_passed=True)
+                          https_and_dns_passed=bool(results))
             stage = 'tunnel_drop'
             process.terminate()
             process.wait(timeout=5)

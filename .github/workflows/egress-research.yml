@@ -54,7 +54,7 @@ jobs:
       - name: Install firewall tooling
         run: |
           sudo apt-get update -qq
-          sudo apt-get install -y --no-install-recommends nftables iptables
+          sudo apt-get install -y --no-install-recommends nftables iptables openvpn
       - name: Build pinned WireGuard tooling
         run: bash scripts/build-wireguard-tools.sh
       - name: Fetch checksum-pinned Xray for combined routing test
@@ -62,6 +62,7 @@ jobs:
       - name: Real encrypted kernel and lifecycle tests
         run: |
           mkdir -p .runtime/egress
+          sudo python3 tests/egress_openvpn_kernel.py | tee .runtime/egress/kernel-openvpn.json
           sudo python3 tests/egress_pool_kernel.py .runtime/tool-src/wireguard-tools/src/wg .runtime/bin/xray | tee .runtime/egress/kernel-pool-manager.json
           sudo python3 tests/egress_kernel.py --firewall legacy --wireguard .runtime/tool-src/wireguard-tools/src/wg | tee .runtime/egress/kernel-legacy.json
           sudo python3 tests/egress_kernel.py --firewall nft --wireguard .runtime/tool-src/wireguard-tools/src/wg | tee .runtime/egress/kernel-nft.json
