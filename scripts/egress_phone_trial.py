@@ -77,12 +77,14 @@ def trial(namespace, upstream, initial):
         gateway=Gateway(controller,'trial.invalid',{'personal-de':(identity,path)})
         threading.Thread(target=gateway.serve_forever,daemon=True).start()
         route_ready=False
+        route_report={}
         def verify_route(cancel):
             report=probe_issued_route('https://'+gateway.public_host,'route_diagnostic',diagnostic_key,'DE',ROOT/'.runtime/bin/xray',cancel)
             print('::notice title=Phone-path exit evidence::'+json.dumps(report),flush=True)
             if not report['country_verified']:
                 controller.pool_failed('personal-de')
                 raise ProbeError('issued_route_country_mismatch')
+            route_report.clear();route_report.update(report)
             return Evidence('DE',True,True,True,True,True,time.monotonic()+150)
         def health(cancel):
             if upstream.poll() is not None or any(child.poll() is not None for child in children):
@@ -120,7 +122,7 @@ def trial(namespace, upstream, initial):
         verify_route(threading.Event())
         route_ready=True
         duration=2700
-        provision=json.dumps({'countryService':'https://'+gateway.public_host,'countryUser':owner,'countryKey':key,'country':'DE','expires_at':int(time.time())+duration},separators=(',',':')).encode()
+        provision=json.dumps({'countryService':'https://'+gateway.public_host,'countryUser':owner,'countryKey':key,'country':'DE','exit_ip':route_report['exit_ipv4'],'observed_countries':route_report['observed_countries'],'expires_at':int(time.time())+duration},separators=(',',':')).encode()
         encrypted=subprocess.run(['openssl','pkeyutl','-encrypt','-pubin','-inkey',str(ROOT/'config/trial-recipient.pub'),'-pkeyopt','rsa_padding_mode:oaep','-pkeyopt','rsa_oaep_md:sha256'],input=provision,capture_output=True,check=True).stdout
         ciphertext=base64.b64encode(encrypted).decode()
         # GitHub buffers check annotations until job completion. Publish only
