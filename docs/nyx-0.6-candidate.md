@@ -42,11 +42,11 @@ This adds no control over other users' settings or host default routes.
 
 ## Validation scope
 
-The backend suite has **107 passing Python tests**, plus four browser-policy tests. New JVM tests cover lease binding, wrong-country/token/generation/host rejection, TTL limits, credential-bound settings changes, redirect-origin restrictions, private revocation bodies and separation of discovery from authenticated availability.
+The local Python suite has **113 passing tests**, including backend and APK-packaging regression checks, plus four browser-policy tests. New JVM tests cover lease binding, wrong-country/token/generation/host rejection, TTL limits, credential-bound settings changes, redirect-origin restrictions, private revocation bodies and separation of discovery from authenticated availability.
 
 Android instrumentation includes a separate-UID positive/negative/positive control: direct traffic is reachable before connection, blocked after changing a working default VPN to an unavailable country, and reachable again after explicit disconnect. The existing four-protocol TUN suite is retained.
 
-An additional temporary TLS fixture is being used to exercise actual UI selection, HTTPS session issuance, traffic through the Android TUN and gateway, lease-generation renewal, switching countries and disconnect. Its DE/FR labels are **synthetic test data** and must never be counted as public German or French exits. Test credentials are ephemeral and excluded from published artifacts. The fixture runs only within the bounded Android CI job.
+Run **42683224822**, source **d5b3613**, passed **21 Rust, 55 JVM and 10 Android instrumentation tests**, including the additional temporary TLS fixture exercising actual UI selection, HTTPS session issuance, traffic through the Android TUN and gateway, lease-generation renewal, switching countries and disconnect. Minified x86_64 release installation/startup and ARM64 override installation also passed. Its overall workflow was not green: two additional compatibility harness checks needed fixes (Android 8 lacks getconf; 16 KB accessibility was not ready immediately after startup). Its DE/FR labels are **synthetic test data** and must never be counted as public German or French exits. Test credentials are ephemeral and excluded from published artifacts. The fixture runs only within the bounded Android CI job.
 
 Consult the specific successful workflow run before claiming that a particular candidate passed all these checks. A built APK or a green backend unit suite alone is not sufficient.
 

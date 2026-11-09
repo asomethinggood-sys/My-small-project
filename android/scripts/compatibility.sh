@@ -32,8 +32,16 @@ for attempt in $(seq 1 60); do
 done
 [[ "$booted" == true ]]
 adb shell input keyevent 82
+adb shell settings put global window_animation_scale 0
+adb shell settings put global transition_animation_scale 0
+adb shell settings put global animator_duration_scale 0
 adb shell getprop ro.product.cpu.abilist > "$DIR/abis.txt"
-adb shell getconf PAGE_SIZE > "$DIR/page-size.txt"
+if [[ "$API" -ge 28 ]]; then
+  adb shell getconf PAGE_SIZE > "$DIR/page-size.txt"
+else
+  # Android 8 has no getconf utility. Do not mistake that for an APK failure.
+  echo 'getconf unavailable on this API; no runtime page-size claim' > "$DIR/page-size.txt"
+fi
 if [[ "$IMAGE" == google_apis_ps16k ]]; then
   [[ "$(tr -d '\r\n' < "$DIR/page-size.txt")" == 16384 ]]
 fi
@@ -46,8 +54,14 @@ sleep 3
 adb shell pidof app.nyx.vpn >> "$DIR/MainActivity.txt"
 if grep -E 'Error:|Exception|Status: timeout' "$DIR/MainActivity.txt"; then exit 1; fi
 # Locations is deliberately not exported: exercise the real home-screen link.
-adb shell uiautomator dump /sdcard/nyx-home.xml
-adb pull /sdcard/nyx-home.xml "$DIR/home.xml"
+# Accessibility can become ready after ActivityManager reports a cold launch.
+# Wait for the actual UI tree, never retry installation or hide a crash.
+ready=false
+for attempt in $(seq 1 15); do
+  if adb shell uiautomator dump /sdcard/nyx-home.xml >> "$DIR/accessibility.txt" 2>&1 && adb pull /sdcard/nyx-home.xml "$DIR/home.xml" >> "$DIR/accessibility.txt" 2>&1; then ready=true; break; fi
+  sleep 2
+done
+[[ "$ready" == true ]]
 python3 - "$DIR/home.xml" <<'PY'
 import re, subprocess, sys, xml.etree.ElementTree as ET
 nodes=[n for n in ET.parse(sys.argv[1]).iter('node') if n.get('text')=='Exit locations']
