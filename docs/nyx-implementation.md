@@ -1,6 +1,18 @@
 # Nyx VPN: implementation status and server contract
 
-## Current: real German exit observed on the runner
+## Current: candidate comparison and local Psiphon transport
+
+See `docs/nyx-comparison-and-psiphon.md`. A six-sample comparison on one runner
+found **DE220/UDP53 passed 2/2 complete checks**, while DE20/UDP53 passed 1/2 and
+DE20/UDP25000 passed 0/2. All six passed UDP DNS and drop blocking. Only DE220 passed
+the small repeated-success research gate; no candidate is published or selectable.
+
+A real isolated Psiphon OSSH -> SOCKS -> HTTP fixture now passes, including rejection
+of a wrong server key while the good client remains usable. Public Psiphon access,
+country selection and packet-tunnel UDP remain unverified. **82 Python tests and
+4 browser-policy tests pass.** Production service/app integration is still unfinished.
+
+## Earlier: real German exit observed on the runner
 
 See `docs/nyx-live-provider-results.md`. Run **42656691009** acquired a German
 VPNBook OpenVPN config through the official UI, authenticated it in a bounded

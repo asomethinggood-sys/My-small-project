@@ -1,5 +1,9 @@
 # Nyx: real runner and German-provider results
 
+For the later six-sample comparison and local Psiphon tests, see
+`docs/nyx-comparison-and-psiphon.md`. This document records the earlier first-exit
+milestone and its follow-up, not the latest provider stability evidence.
+
 ## Verified milestone
 
 GitHub Actions run [42656691009](https://github.com/asomethinggood-sys/My-small-project/actions/runs/42656691009), source commit `43aa572`, completed the following **real, bounded VPNBook OpenVPN experiment**:

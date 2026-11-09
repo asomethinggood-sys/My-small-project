@@ -24,20 +24,6 @@ concurrency:
   group: nyx-egress-research-${{ github.ref }}
   cancel-in-progress: false
 jobs:
-  recover-comparison:
-    runs-on: ubuntu-24.04
-    timeout-minutes: 5
-    permissions:
-      contents: read
-      actions: read
-    steps:
-      - uses: actions/checkout@v4
-      - name: Retrieve existing comparison without repeating provider traffic
-        env:
-          GH_TOKEN: ${{ github.token }}
-        run: gh run download 42659139801 --repo asomethinggood-sys/My-small-project --name nyx-browser-42659139801 --dir .runtime/egress/previous
-      - name: Summarize all samples in a separate annotation budget
-        run: python3 -m scripts.egress_batch --report-only .runtime/egress/previous/comparison.json
   psiphon-local:
     runs-on: ubuntu-24.04
     timeout-minutes: 10
