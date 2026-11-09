@@ -93,9 +93,15 @@ try {
               const input = JSON.stringify({provider: 'vpnbook', username: 'vpnbook', password: password[1],
                 expected_server: candidate.server, expected_port: candidate.port,
                 profile_base64: Buffer.concat(chunks).toString('base64')});
-              const result = spawnSync('sudo', ['-n', 'python3', '-m', 'scripts.egress_openvpn_probe'],
-                {input, encoding: 'utf8', timeout: 125000, maxBuffer: 65536, env: {PATH: process.env.PATH}});
-              report.live_probe = result.status === 0 ? JSON.parse(result.stdout) : {status: 'probe_process_failed'};
+              if (process.env.NYX_PRIVATE_TRIAL_ACQUIRE === 'true') {
+                if (!process.env.RUNNER_TEMP) throw new Error('Private runner temporary directory required');
+                await fs.writeFile(`${process.env.RUNNER_TEMP}/nyx-personal-upstream.json`, input, {mode: 0o600, flag: 'wx'});
+                report.live_probe = {status: 'private_trial_input_prepared_not_connected'};
+              } else {
+                const result = spawnSync('sudo', ['-n', 'python3', '-m', 'scripts.egress_openvpn_probe'],
+                  {input, encoding: 'utf8', timeout: 125000, maxBuffer: 65536, env: {PATH: process.env.PATH}});
+                report.live_probe = result.status === 0 ? JSON.parse(result.stdout) : {status: 'probe_process_failed'};
+              }
             } else report.live_probe = {status: 'public_credentials_not_detected'};
           }
           await download.delete();

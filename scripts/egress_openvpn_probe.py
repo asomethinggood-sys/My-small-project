@@ -165,7 +165,7 @@ def assess_responses(results):
             'observed_countries': countries, 'https_and_dns_passed': bool(results)}
 
 
-def probe(envelope, metadata_fetcher=None):
+def probe(envelope, metadata_fetcher=None, *, private_trial=None):
     if os.geteuid() != 0:
         raise ValueError('Root required for isolated test')
     parsed = prepare(envelope)
@@ -260,6 +260,11 @@ def probe(envelope, metadata_fetcher=None):
                 except (ProbeError, ValueError) as error:
                     result['endpoint_probes'][stage] = str(error) if isinstance(error, ProbeError) else 'invalid_response'
             result.update(assess_responses(results))
+            if private_trial is not None:
+                if metadata_fetcher is not None or not result.get('country_verified') or not result.get('udp_dns_passed'):
+                    raise ProbeError('private_trial_requires_real_verified_exit')
+                stage = 'private_phone_trial'
+                private_trial(ns, process, result)
             stage = 'tunnel_drop'
             process.terminate()
             process.wait(timeout=5)

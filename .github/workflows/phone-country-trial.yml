@@ -1,0 +1,45 @@
+name: Private bounded phone country trial
+on:
+  push:
+    branches: [arena/f056ce38-my-small-project]
+    paths:
+      - .github/workflows/phone-country-trial.yml
+      - scripts/egress_phone_trial.py
+      - config/trial-recipient.pub
+permissions:
+  contents: read
+concurrency:
+  group: private-phone-country-trial
+  cancel-in-progress: false
+jobs:
+  trial:
+    if: contains(github.event.head_commit.message, '[private-country-trial]')
+    runs-on: ubuntu-24.04
+    timeout-minutes: 35
+    steps:
+      - uses: actions/checkout@v4
+      - name: Validate bounded control and configuration policies
+        run: python3 -m unittest discover -s tests -p 'test_egress*.py' -q
+      - name: Install isolated trial tools
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y --no-install-recommends openvpn iptables
+          bash scripts/download-binaries.sh .runtime/bin --xray-only
+          curl -fL --retry 2 --max-time 90 https://github.com/cloudflare/cloudflared/releases/download/2026.2.0/cloudflared-linux-amd64 -o .runtime/bin/cloudflared
+          chmod 755 .runtime/bin/cloudflared
+          npm install --prefix .runtime/browser --no-audit --no-fund playwright@1.56.1
+          .runtime/browser/node_modules/.bin/playwright install --with-deps chromium
+      - name: Acquire official personal-use German upstream without publishing configuration
+        env:
+          NYX_PROVIDER_PROBE: 'true'
+          NYX_PRIVATE_TRIAL_ACQUIRE: 'true'
+          NYX_VPNBOOK_SERVER: de220
+          NYX_VPNBOOK_PORT: '53'
+        run: |
+          timeout 150s node scripts/egress_vpnbook_browser.mjs
+          test -s "$RUNNER_TEMP/nyx-personal-upstream.json"
+      - name: Real one-owner phone trial with automatic shutdown
+        run: sudo --preserve-env=RUNNER_TEMP python3 -u -m scripts.egress_phone_trial
+      - name: Remove private temporary inputs
+        if: always()
+        run: sudo rm -rf "$RUNNER_TEMP/nyx-personal-upstream.json" "$RUNNER_TEMP/nyx-private-runtime"
