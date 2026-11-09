@@ -118,6 +118,34 @@ def build_catalog(policy, observations, sources, now=None):
     }
 
 
+def attach_advertisements(catalog, source_report):
+    """Keep provider advertisements separate from discovered/verified servers."""
+    now = catalog['generated_at']
+    timestamp = source_report.get('generated_at', 0)
+    fresh = (type(timestamp) is int and now - 900 <= timestamp <= now + 60)
+    advertised = set()
+    if fresh:
+        for source in source_report.get('sources', []):
+            kind = {'vpnbook-openvpn': 'openvpn', 'vpnbook-wireguard': 'wireguard'}.get(source.get('source'))
+            if not kind or source.get('status') != 'fetched':
+                continue
+            for endpoint in source.get('advertised_endpoints', []):
+                if not isinstance(endpoint, str):
+                    continue
+                match = re.fullmatch(r'(de|fr|us|ca|uk|gb)[0-9]{1,4}\.vpnbook\.com', endpoint)
+                if match:
+                    country = 'GB' if match[1] == 'uk' else match[1].upper()
+                    advertised.add((country, 'vpnbook', kind, endpoint))
+    for row in catalog['countries']:
+        candidates = [item for item in advertised if item[0] == row['country']]
+        row['advertised_endpoints'] = len({(item[1], item[3]) for item in candidates})
+        row['advertised_providers'] = len({item[1] for item in candidates})
+        for entry in row.get('exits', []):
+            entry['advertised_endpoints'] = len({item[3] for item in candidates
+                                                 if item[1] == entry['provider'] and item[2] == entry['type']})
+    return catalog
+
+
 def atomic_write(path, value):
     path = Path(path)
     path.parent.mkdir(parents=True, exist_ok=True)
@@ -170,6 +198,9 @@ def main():
                                    and item['protocol'] == adapter['type']),
             verified_servers=0, selectable=False, udp=adapter['udp'])
             for adapter in registry['adapters']]
+    source_path = Path('.runtime/egress/sources.json')
+    source_report = json.loads(source_path.read_text()) if source_path.exists() else {}
+    attach_advertisements(result, source_report)
     atomic_write(args.output, result)
     return 1 if failed else 0
 

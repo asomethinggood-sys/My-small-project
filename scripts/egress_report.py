@@ -24,15 +24,17 @@ def main():
     path = directory / 'catalog.json'
     if path.exists():
         catalog = json.loads(path.read_text())
-        lines += ['', '| Country | Discovered servers | Providers | Verified exits |',
-                  '|---|---:|---:|---:|']
+        lines += ['', '| Country | Discovered servers | Directory providers | Advertised endpoints | Advertising providers | Verified exits |',
+                  '|---|---:|---:|---:|---:|---:|']
         for country in catalog['countries']:
             code = country['country']
             if not re.fullmatch('[A-Z]{2}', code):
                 raise ValueError('Invalid country in report')
             count = int(country['discovered_servers'])
             providers = int(country['discovered_providers'])
-            lines.append(f'| {code} | {count} | {providers} | 0 |')
+            advertised = int(country.get('advertised_endpoints', 0))
+            advertising_providers = int(country.get('advertised_providers', 0))
+            lines.append(f'| {code} | {count} | {providers} | {advertised} | {advertising_providers} | 0 |')
             if count:
                 print(f'::notice title=Nyx discovery::{code}: {count} discovered servers, {providers} providers, 0 verified exits')
     else:

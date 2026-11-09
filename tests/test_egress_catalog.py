@@ -68,6 +68,25 @@ class EgressCatalogTests(unittest.TestCase):
             with self.assertRaises(ValueError):
                 catalog.validate_policy(dict(self.policy, **change))
 
+    def test_advertisements_are_deduplicated_and_never_promoted(self):
+        result = catalog.build_catalog(self.policy, [], [], now=1000)
+        sources = {'generated_at': 1000, 'sources': [
+            {'source': name, 'status': 'fetched', 'advertised_endpoints':
+             ['de20.vpnbook.com', 'de20.vpnbook.com', 'de220.vpnbook.com', 'evil.example']}
+            for name in ['vpnbook-openvpn', 'vpnbook-wireguard']]}
+        catalog.attach_advertisements(result, sources)
+        germany = next(row for row in result['countries'] if row['country'] == 'DE')
+        self.assertEqual(germany['advertised_endpoints'], 2)
+        self.assertEqual(germany['advertised_providers'], 1)
+        self.assertEqual(germany['discovered_servers'], 0)
+        self.assertFalse(germany['selectable'])
+
+    def test_stale_advertisements_are_not_counted(self):
+        result = catalog.build_catalog(self.policy, [], [], now=2000)
+        catalog.attach_advertisements(result, {'generated_at': 1, 'sources': [
+            {'source': 'vpnbook-openvpn', 'status': 'fetched', 'advertised_endpoints': ['de20.vpnbook.com']}]})
+        self.assertTrue(all(row['advertised_endpoints'] == 0 for row in result['countries']))
+
     def test_atomic_output(self):
         with tempfile.TemporaryDirectory() as directory:
             path = Path(directory) / 'catalog.json'

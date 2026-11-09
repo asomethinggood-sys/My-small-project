@@ -17,7 +17,7 @@ try {
     return route.abort();
   });
   const page = await context.newPage();
-  await page.goto('https://www.vpnbook.com/freevpn/openvpn', {waitUntil: 'domcontentloaded', timeout: 30000});
+  await page.goto('https://www.vpnbook.com/freevpn/openvpn', {waitUntil: 'networkidle', timeout: 30000});
   // Wait for hydration via visible controls, not a long-lived background process.
   await page.locator('body').waitFor();
   report.has_german_endpoint = await page.getByText('de20.vpnbook.com', {exact: true}).count() > 0;
@@ -62,7 +62,15 @@ try {
         if (!/verify|captcha|check/i.test(label)) await confirm.click({timeout: 10000});
       }
       const download = await pending;
-      if (!download) report.status = 'download_not_started_or_verification_required';
+      if (!download) {
+        report.status = 'download_not_started';
+        report.remaining_controls = await page.locator('button, a[download], label').evaluateAll(elements =>
+          elements.map(el => (el.textContent || '').trim().replace(/\s+/g, ' '))
+            .filter(text => text.length < 150 && /download|verify|captcha|generate|agree|accept|continue/i.test(text)
+              && !/password|username|private|key/i.test(text)).slice(0, 12));
+        report.verification_iframe_present = await page.locator('iframe[src*="challenges.cloudflare.com"], iframe[src*="recaptcha"], iframe[src*="hcaptcha"]').count() > 0;
+        if (report.verification_iframe_present) report.status = 'verification_required';
+      }
       else {
         const filename = download.suggestedFilename();
         if (!downloadFormat(filename)) {
@@ -103,6 +111,9 @@ console.log(`::notice title=Nyx browser acquisition::${report.status}; German en
 if (report.inspection) {
   console.log(`::notice title=Nyx downloaded configuration::${report.inspection.status}`);
   if (report.inspection.reason) console.log(`::notice title=Nyx configuration policy::${report.inspection.reason}`);
+}
+for (const text of report.remaining_controls || []) {
+  console.log(`::notice title=Nyx remaining control::${text.replace(/%/g, '%25').replace(/\r/g, '%0D').replace(/\n/g, '%0A')}`);
 }
 for (const item of report.controls || []) {
   const text = item.text.replace(/%/g, '%25').replace(/\r/g, '%0D').replace(/\n/g, '%0A');
