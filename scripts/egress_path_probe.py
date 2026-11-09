@@ -13,6 +13,7 @@ import subprocess
 import tempfile
 import time
 import urllib.request
+import urllib.error
 from urllib.parse import urlsplit, parse_qs
 import uuid
 
@@ -64,6 +65,30 @@ def request(service, user, key, path, body):
         return json.loads(payload)
 
 
+def await_service(service, user, key, country, cancel):
+    """Bounded read-only connector warmup; never retry lease creation."""
+    origin=urlsplit(service)
+    if (origin.scheme!='https' or not origin.hostname or origin.port not in (None,443)
+            or origin.username or origin.password or origin.path not in ('','/') or origin.query or origin.fragment):
+        raise ValueError('HTTPS root required before sending credentials')
+    for attempt in range(4):
+        if cancel.is_set():raise ValueError('Probe cancelled')
+        try:
+            req=urllib.request.Request(service.rstrip('/')+'/v1/availability',headers={'Authorization':'Bearer '+key,'X-Nyx-User':user})
+            with urllib.request.build_opener(NoRedirect()).open(req,timeout=3) as response:
+                payload=response.read(8193)
+                if len(payload)>8192:raise ValueError('Oversized availability')
+                value=json.loads(payload)
+                if not any(row.get('country')==country for row in value.get('countries',[])):
+                    raise ValueError('Requested country unavailable')
+                return
+        except urllib.error.HTTPError as error:
+            if error.code not in (404,502,503,504) or attempt==3:raise
+        except (urllib.error.URLError,OSError):
+            if attempt==3:raise
+        cancel.wait(1)
+
+
 def exact(stream, size):
     data=b''
     while len(data)<size:
@@ -93,9 +118,12 @@ def udp_dns(port):
 
 
 def probe(service, user, key, country, xray, cancel):
-    lease=request(service,user,key,'/v1/sessions',{'country':country,'require_udp':True})
-    process=None
+    lease=None;process=None;stage='https_service_readiness'
     try:
+        await_service(service,user,key,country,cancel)
+        stage='https_session_acquire'
+        lease=request(service,user,key,'/v1/sessions',{'country':country,'require_udp':True})
+        stage='validate_issued_profile'
         with socket.socket() as reserve:
             reserve.bind(('127.0.0.1',0));port=reserve.getsockname()[1]
         config=client_config(service,lease,country,port)
@@ -110,7 +138,9 @@ def probe(service, user, key, country, xray, cancel):
                 except OSError:
                     if time.monotonic()>=deadline:raise ValueError('Probe client did not start')
                     time.sleep(.05)
+            stage='issued_route_udp_dns'
             udp_dns(port)
+            stage='issued_route_https_geography'
             observations={};timings={}
             urls=['https://api.ipify.org?format=json','https://ifconfig.co/json','https://ipwho.is/','https://ipinfo.io/json']
             for index,url in enumerate(urls):
@@ -127,10 +157,15 @@ def probe(service, user, key, country, xray, cancel):
             assessment=assess_responses(observations, expected_country=country)
             assessment.update(path='issued_tls_gateway_route',udp_dns_passed=True,runner_https_ms=timings)
             return assessment
+    except Exception as error:
+        # Only fixed stage/class identifiers, never exception text or URI/key.
+        print('::error title=Issued-route probe::'+stage+'; '+type(error).__name__,flush=True)
+        raise
     finally:
         if process is not None:
             process.terminate()
             try:process.wait(timeout=3)
             except subprocess.TimeoutExpired:process.kill();process.wait()
-        try:request(service,user,key,'/v1/disconnect',{'token':lease['token']})
+        try:
+            if lease is not None:request(service,user,key,'/v1/disconnect',{'token':lease['token']})
         except Exception:pass  # Server-side lease expiration remains enforced.

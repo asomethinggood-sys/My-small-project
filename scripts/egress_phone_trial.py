@@ -49,6 +49,7 @@ def trial(namespace, upstream, initial):
         run('ip', '-n', namespace, 'route', 'replace', 'default', 'dev', 'nyx-vpn')
         upstream.send_signal(signal.SIGCONT)
     run('ip', 'netns', 'exec', namespace, 'python3', '-c', DNS_UDP_PROBE, timeout=6)
+    print('::notice title=Trial validation stage::Namespace negative and recovery controls passed',flush=True)
     token=uuid.uuid4().hex[:8]
     host_link='nyxt'+token
     temporary=Path(os.environ['RUNNER_TEMP'])/'nyx-private-runtime'
@@ -119,6 +120,7 @@ def trial(namespace, upstream, initial):
         gateway.public_host=match.group(1)
         # Do not hand out a country label based only on namespace traffic.
         # This must pass through the issued TLS/WS lease used by phone clients.
+        print('::notice title=Trial validation stage::Checking public TLS lease path before issuing phone settings',flush=True)
         verify_route(threading.Event())
         route_ready=True
         duration=2700

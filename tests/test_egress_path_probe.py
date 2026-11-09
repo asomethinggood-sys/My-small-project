@@ -1,7 +1,8 @@
 import copy
 import unittest
-from unittest.mock import patch
-from scripts.egress_path_probe import client_config, request
+from unittest.mock import patch, MagicMock
+import urllib.error
+from scripts.egress_path_probe import client_config, request, await_service
 from scripts.egress_openvpn_probe import assess_responses
 
 
@@ -33,6 +34,23 @@ class IssuedPathTests(unittest.TestCase):
             for origin in ['http://trial.example','https://user@trial.example','https://trial.example:8443','https://trial.example/path']:
                 with self.assertRaises(ValueError):request(origin,'user','private','/v1/sessions',{})
             opener.assert_not_called()
+
+    def test_readiness_never_retries_auth_failure_or_creates_lease(self):
+        cancel=MagicMock();cancel.is_set.return_value=False
+        with patch('urllib.request.build_opener') as opener:
+            opener.return_value.open.side_effect=urllib.error.HTTPError('https://trial.example',401,'denied',{},None)
+            with self.assertRaises(urllib.error.HTTPError):await_service('https://trial.example','user','private','DE',cancel)
+            self.assertEqual(opener.return_value.open.call_count,1)
+            req=opener.return_value.open.call_args.args[0]
+            self.assertEqual(req.get_method(),'GET')
+            self.assertIsNone(req.data)
+
+    def test_readiness_rejects_unavailable_country_without_retry(self):
+        cancel=MagicMock();cancel.is_set.return_value=False
+        with patch('urllib.request.build_opener') as opener:
+            opener.return_value.open.return_value.__enter__.return_value.read.return_value=b'{"countries":[{"country":"FR"}]}'
+            with self.assertRaises(ValueError):await_service('https://trial.example','user','private','DE',cancel)
+            self.assertEqual(opener.return_value.open.call_count,1)
 
     def test_any_french_observation_rejects_german_selection(self):
         observations={0:{'ip':'8.8.4.4'},1:{'ip':'8.8.4.4','country_iso':'DE'},
