@@ -51,7 +51,7 @@ jobs:
               cat "$RUNNER_TEMP/nyx-phone-trial.log"
               exit 0
             fi
-            if ! kill -0 "$trial_pid" 2>/dev/null; then cat "$RUNNER_TEMP/nyx-phone-trial.log"; exit 1; fi
+            if ! sudo -n kill -0 "$trial_pid" 2>/dev/null; then cat "$RUNNER_TEMP/nyx-phone-trial.log"; exit 1; fi
             sleep 2
           done
           echo '::error::No verified private trial became ready within startup budget'
@@ -60,7 +60,7 @@ jobs:
         run: |
           pid=$(cat "$RUNNER_TEMP/nyx-phone-trial.pid")
           for attempt in $(seq 1 280); do
-            if ! kill -0 "$pid" 2>/dev/null; then cat "$RUNNER_TEMP/nyx-phone-trial.log"; exit 0; fi
+            if ! sudo -n kill -0 "$pid" 2>/dev/null; then cat "$RUNNER_TEMP/nyx-phone-trial.log"; exit 0; fi
             sleep 10
           done
           sudo kill "$pid"
