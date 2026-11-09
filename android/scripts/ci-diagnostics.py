@@ -13,3 +13,6 @@ for p in Path('android/app/build').rglob('*.xml'):
     except ET.ParseError:pass
 p=Path('android/build-log.txt')
 if p.exists() and 'BUILD FAILED' in p.read_text():annotation('Gradle build',p.read_text())
+for name in ['android/emulator-boot.log','android/release/INSTALLATION.txt','android/release/RELEASE-LAUNCH.txt']:
+    p=Path(name)
+    if p.exists():annotation(p.name,p.read_text(errors='replace'))

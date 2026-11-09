@@ -31,7 +31,8 @@ public final class CountryClient {
         public final String country;
         public final int pools,providers;
         public final long deadline;
-        Available(String c,int p,int v,long d){country=c;pools=p;providers=v;deadline=d;}
+        public final List<String> providerNames,protocols;
+        Available(String c,int p,int v,long d,List<String> names,List<String> types){country=c;pools=p;providers=v;deadline=d;providerNames=Collections.unmodifiableList(names);protocols=Collections.unmodifiableList(types);}
     }
     private final Source source;
     private final Transport transport;
@@ -59,6 +60,10 @@ public final class CountryClient {
         if(started<0||started>Long.MAX_VALUE-300000)throw new IllegalArgumentException("Invalid monotonic clock");
         return new Lease(country,uri,token,generation,started+ttl*1000);
     }
+    private static List<String> labels(JSONArray rows)throws Exception{
+        if(rows.length()<1||rows.length()>128)throw new IllegalArgumentException("Invalid breakdown");
+        List<String> result=new ArrayList<>();for(int i=0;i<rows.length();i++){String name=rows.getString(i);if(!name.matches("[a-z0-9_-]{1,48}")||result.contains(name))throw new IllegalArgumentException("Invalid breakdown");result.add(name);}return result;
+    }
     public List<Available> availability(long started)throws Exception{
         JSONObject reply=transport.request("GET","/v1/availability",null);
         if(number(reply,"schema_version",1,1)!=1||!"authenticated_live_availability".equals(reply.getString("purpose")))throw new IllegalArgumentException("Wrong catalog");
@@ -69,7 +74,8 @@ public final class CountryClient {
             if(!Arrays.asList(LocationCatalog.TARGETS.split(" ")).contains(code)||!seen.add(code)||!Boolean.TRUE.equals(row.get("udp")))throw new IllegalArgumentException("Invalid availability");
             int pools=(int)number(row,"pool_count",1,128),providers=(int)number(row,"provider_count",1,128);long ttl=number(row,"expires_in",1,300);
             if(providers>pools||started<0||started>Long.MAX_VALUE-300000)throw new IllegalArgumentException("Invalid availability counts");
-            result.add(new Available(code,pools,providers,started+ttl*1000));
+            List<String> names=labels(row.getJSONArray("providers")),types=labels(row.getJSONArray("protocols"));if(names.size()!=providers)throw new IllegalArgumentException("Provider count mismatch");
+            result.add(new Available(code,pools,providers,started+ttl*1000,names,types));
         }
         return result;
     }

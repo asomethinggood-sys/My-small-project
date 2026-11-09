@@ -180,10 +180,18 @@ public final class TunnelService extends VpnService {
         core=null;coreRunning=false;nativeConfig="";installedOptions="";active=null;connectedAt=0;
         // Keep TUN open: unavailable country traffic must not escape to default.
     }
+    private void blockCountryPayload(int mtu)throws Exception{
+        if(core==null&&!coreRunning&&nativeConfig.isEmpty()){ensureTun(mtu);return;}
+        // Replace Android's routes with a fresh blackhole TUN before stopping the
+        // old engine. Keep its descriptor alive until stop returns, avoiding fd reuse.
+        ParcelFileDescriptor previous=tun;tun=null;
+        try{ensureTun(mtu);}catch(Exception error){tun=previous;stopPayload();throw error;}
+        stopPayload();if(previous!=null)previous.close();
+    }
     private void watchLease(CountryClient.Lease lease,long token){
         main.postDelayed(()->{
             if(!gate.accepts(token)||countryLease!=lease)return;
-            engine.execute(()->{if(gate.accepts(token)&&countryLease==lease){stopPayload();publish(token,"Country expired","Traffic blocked; renewing country session",-1,1);}});
+            engine.execute(()->{if(gate.accepts(token)&&countryLease==lease){try{blockCountryPayload(tunMtu==0?1400:tunMtu);}catch(Exception ignored){}publish(token,"Country expired","Traffic blocked; renewing country session",-1,1);}});
             requestCheck(0);
         },Math.max(0,lease.deadline-SystemClock.elapsedRealtime()));
     }
@@ -191,14 +199,14 @@ public final class TunnelService extends VpnService {
         String country=settings.getString("country");
         String binding;
         try{binding=CountryClient.binding(settings);}catch(Exception invalid){
-            retireCountry();engine.submit(()->{if(!gate.accepts(token))return;stopPayload();try{ensureTun(NetworkConfig.mtu(settings));}catch(Exception e){throw new IllegalStateException(e);}}).get(15,TimeUnit.SECONDS);throw invalid;
+            retireCountry();engine.submit(()->{if(!gate.accepts(token))return;try{blockCountryPayload(NetworkConfig.mtu(settings));}catch(Exception e){throw new IllegalStateException(e);}}).get(15,TimeUnit.SECONDS);throw invalid;
         }
         CountryClient.Lease old=countryLease;CountryClient.Source oldSource=leaseSource;
         boolean same=binding.equals(countryBinding);
         int action=old==null?2:RustCore.leaseAction(SystemClock.elapsedRealtime(),old.deadline,same);
         if(action==2){
             retireCountry();old=null;oldSource=null;
-            engine.submit(()->{if(!gate.accepts(token))return;stopPayload();try{ensureTun(NetworkConfig.mtu(settings));}catch(Exception e){throw new IllegalStateException(e);}}).get(15,TimeUnit.SECONDS);
+            engine.submit(()->{if(!gate.accepts(token))return;try{blockCountryPayload(NetworkConfig.mtu(settings));}catch(Exception e){throw new IllegalStateException(e);}}).get(15,TimeUnit.SECONDS);
         }
         if(!gate.accepts(token))return;
         if(!upstreamAvailable())throw new IllegalStateException("Country control channel offline");

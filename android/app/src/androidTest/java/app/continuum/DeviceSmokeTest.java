@@ -86,9 +86,12 @@ public class DeviceSmokeTest {
         try{
             directPathProbe("direct");
             JSONArray fixtures=new JSONArray(shell("cat /sdcard/Download/continuum-fixtures.json"));
-            store.save(store.load().put("country","DE").put("countryService","").put("selection",0).put("profiles",new JSONArray().put(new JSONObject().put("uri",fixtures.getString(0)))));
+            store.save(store.load().put("country","").put("countryService","").put("selection",0).put("profiles",new JSONArray().put(new JSONObject().put("uri",fixtures.getString(0)))));
             screen=launch();press(screen,"Connect");
-            await("unavailable selected country blocks instead of installing valid default profile",()->observer.status.tunOpen&&!observer.status.engineRunning&&"Country unavailable".equals(observer.status.state),20);
+            await("valid default route is initially connected",()->observer.status.engineRunning&&"Connected".equals(observer.status.state),60);
+            store.save(store.load().put("country","DE"));
+            context.startService(new Intent(context,TunnelService.class).setAction(TunnelService.REFRESH));
+            await("unavailable selected country blocks instead of retaining valid default profile",()->observer.status.tunOpen&&!observer.status.engineRunning&&"Country unavailable".equals(observer.status.state),20);
             assertTrue(vpn());directPathProbe("blocked");
             screen=launch();press(screen,"Disconnect");await("explicit disconnect releases the country block",()->!observer.status.running&&!vpn(),6);
             directPathProbe("direct");

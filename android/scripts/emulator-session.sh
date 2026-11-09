@@ -36,11 +36,17 @@ bash android/scripts/device-smoke.sh
   cd android
   gradle --no-daemon -PtargetAbi=x86_64 :app:assembleRelease
 )
-adb uninstall app.nyx.vpn
+# Gradle may already have uninstalled its instrumentation target.
+if adb shell pm path app.nyx.vpn | grep -q '^package:'; then adb uninstall app.nyx.vpn; fi
 adb install --no-streaming android/app/build/outputs/apk/release/app-release.apk
-adb shell am start -W -n app.nyx.vpn/app.continuum.MainActivity
+adb logcat -c
+adb shell am start -W -n app.nyx.vpn/app.continuum.MainActivity > android/release/RELEASE-LAUNCH.txt 2>&1
 sleep 3
-adb shell pidof app.nyx.vpn
+if ! adb shell pidof app.nyx.vpn; then
+  adb logcat -d -s AndroidRuntime >> android/release/RELEASE-LAUNCH.txt
+  cat android/release/RELEASE-LAUNCH.txt
+  exit 1
+fi
 adb uninstall app.nyx.vpn
 adb install --no-streaming --abi arm64-v8a android/release/nyx-0.6.0-arm64.apk > android/release/INSTALLATION.txt 2>&1
 cat android/release/INSTALLATION.txt

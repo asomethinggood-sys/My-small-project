@@ -35,7 +35,7 @@ public class CountryClientTest {
         try{c.availability(1000);fail();}catch(IllegalArgumentException expected){}
     }
     @Test public void liveAvailabilityExpiresAndRejectsDuplicates()throws Exception{
-        JSONObject row=new JSONObject().put("country","DE").put("pool_count",2).put("provider_count",1).put("expires_in",60).put("udp",true);
+        JSONObject row=new JSONObject().put("country","DE").put("pool_count",2).put("provider_count",1).put("providers",new JSONArray().put("fixture")).put("protocols",new JSONArray().put("wireguard")).put("expires_in",60).put("udp",true);
         JSONObject reply=new JSONObject().put("schema_version",1).put("purpose","authenticated_live_availability").put("countries",new JSONArray().put(row));
         CountryClient c=new CountryClient(new CountryClient.Source(settings()),(m,p,b)->reply);assertEquals(61000,c.availability(1000).get(0).deadline);
         reply.getJSONArray("countries").put(row);try{c.availability(1000);fail();}catch(IllegalArgumentException expected){}

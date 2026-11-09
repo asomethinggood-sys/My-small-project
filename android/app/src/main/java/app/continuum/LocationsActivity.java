@@ -22,12 +22,13 @@ public final class LocationsActivity extends Activity {
     private EditText search;
     private LocationCatalog catalog;
     private CatalogClient request;
-    private CountryClient countryRequest;
+    private volatile CountryClient countryRequest;
     private final Map<String,CountryClient.Available> available=new HashMap<>();
     private StateClient routeState;
     private String serviceStatus="Country service not provisioned";
-    private boolean visible,loading;
-    private long generation;
+    private volatile boolean visible;
+    private boolean loading;
+    private volatile long generation;
     private final Runnable tick=new Runnable(){public void run(){render();handler.postDelayed(this,30000);}};
     @Override public void onCreate(Bundle state){
         super.onCreate(state);routeState=new StateClient(this);getWindow().getDecorView().setSystemUiVisibility(0);
@@ -53,6 +54,7 @@ public final class LocationsActivity extends Activity {
         io.execute(()->{
             String body=null;LocationCatalog result=null;
             try{body=client.fetch();result=LocationCatalog.parse(body);}catch(Exception ignored){}
+            if(!visible||ticket!=generation)return;
             Map<String,CountryClient.Available> live=new HashMap<>();String liveStatus="Country service not provisioned";
             org.json.JSONObject settings=new SettingsStore(this).load();
             if(!settings.optString("countryService","").isEmpty()){
@@ -92,6 +94,7 @@ public final class LocationsActivity extends Activity {
     private void details(String code,LocationCatalog.Country country){
         CountryClient.Available live=available.get(code);boolean usable=live!=null&&live.deadline>SystemClock.elapsedRealtime();
         StringBuilder detail=new StringBuilder(usable?"Verified service pools: "+live.pools+"\nUDP supported · "+live.providers+" providers\n\n":"No currently verified service pool\n\n");
+        if(usable)detail.append("Service providers: ").append(String.join(", ",live.providerNames)).append("\nProtocols: ").append(String.join(", ",live.protocols)).append("\n\n");
         if(country!=null){boolean fresh=catalog.fresh(System.currentTimeMillis()/1000);detail.append(fresh?"Discovery snapshot\n":"Historical snapshot — expired\n").append(country.discovered).append(" discovered servers · ").append(country.providers).append(" directory providers\n").append(country.advertised).append(" advertised endpoints\n\n");
             for(LocationCatalog.Exit exit:country.exits)detail.append(label(exit.provider)).append(" / ").append(exit.type.toUpperCase(Locale.ROOT)).append("\n").append(exit.discovered).append(" discovered · ").append(exit.advertised).append(" advertised\n").append("UDP: ").append("unsupported".equals(exit.udp)?"not supported":"not verified for service").append("\n\n");
         }else detail.append("No current discovery data. Refresh to request the runner's latest public metadata.\n\n");

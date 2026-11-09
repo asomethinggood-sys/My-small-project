@@ -49,6 +49,9 @@ jobs:
           mkdir -p release
           cp app/build/outputs/apk/release/app-release.apk release/nyx-0.6.0-arm64.apk
           "$ANDROID_HOME/build-tools/35.0.0/apksigner" verify --verbose --print-certs release/nyx-0.6.0-arm64.apk > release/SIGNING-CERTIFICATE.txt
+          "$ANDROID_HOME/build-tools/35.0.0/apksigner" verify --min-sdk-version 23 --max-sdk-version 23 release/nyx-0.6.0-arm64.apk
+          "$ANDROID_HOME/build-tools/35.0.0/apksigner" verify --min-sdk-version 26 --max-sdk-version 27 release/nyx-0.6.0-arm64.apk
+          "$ANDROID_HOME/build-tools/35.0.0/apksigner" verify --min-sdk-version 28 --max-sdk-version 35 release/nyx-0.6.0-arm64.apk
           "$ANDROID_HOME/build-tools/35.0.0/zipalign" -c -P 16 4 release/nyx-0.6.0-arm64.apk
           python3 scripts/check-apk.py release/nyx-0.6.0-arm64.apk
           python3 - <<'PY'
@@ -61,7 +64,7 @@ jobs:
               assert native and all(n.startswith('lib/arm64-v8a/') for n in native),native
               assert all(z.getinfo(n).compress_type==zipfile.ZIP_STORED for n in native)
           size=p.stat().st_size
-          mode='provisioned key' if os.environ.get('CONTINUUM_KEYSTORE_PATH') else 'disposable preview key; stable signing NOT configured'
+          mode=os.environ.get('NYX_SIGNING_MODE','debug_key_not_for_distribution')
           text=f'ARM64 APK: {size:,} bytes ({size/1000000:.2f} MB; {size/1048576:.2f} MiB).\nSHA256: {hashlib.sha256(p.read_bytes()).hexdigest()}\nSigning: {mode}\n'
           print('::notice title=APK size and signing::'+text.replace('\n','%0A'))
           Path('release/APK-SIZE.txt').write_text(text)
@@ -102,7 +105,7 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: |
           tag="nyx-0.6.0-candidate-${GITHUB_RUN_NUMBER}"
-          gh release create "$tag" android/release/* --target "$GITHUB_SHA" --prerelease --title "Nyx VPN 0.5 · build ${GITHUB_RUN_NUMBER}" --notes "Android 8+ ARM64. Separate app.nyx.vpn package: does not replace Continuum. Default project subscription unchanged. Custom night interface, reduced-motion-aware connection animations, searchable 30-country discovery and provider/capability details. Locations are metadata only: ZERO selectable country exits; no public shared-use provider pool is approved. Rust JNI handles scheduling, cancellation, backoff, catalog eligibility and presentation policy; Android UI/orchestration remain Java and Xray remains Go. NOT an all-Rust tunnel engine or completed multi-provider deployment. Stable signing requires privately provisioned Actions secrets; APK-SIZE.txt states the actual mode. Rust/JVM/UI tests and real API35 x86_64 TUN regressions pass before publication. Physical ARM, mobile handoff, long-duration stability and Tehran latency remain unverified."
+          gh release create "$tag" android/release/* --target "$GITHUB_SHA" --prerelease --title "Nyx VPN 0.6 candidate · build ${GITHUB_RUN_NUMBER}" --notes "Android 8+ ARM64. Separate app.nyx.vpn package: does not replace Continuum. Default project subscription unchanged. Custom night interface, reduced-motion-aware connection animations, searchable 30-country discovery and provider/capability details. Includes authenticated country selection and lease renewal for a provisioned HTTPS service; discovery alone cannot authorize routes. No public shared-use provider pool is deployed by this build. Uncompressed 16 KB-aligned native libraries and v1/v2/v3 signing; physical POCO installation still requires validation. Rust JNI handles scheduling, cancellation, backoff, catalog eligibility and presentation policy; Android UI/orchestration remain Java and Xray remains Go. NOT an all-Rust tunnel engine or completed multi-provider deployment. Stable signing requires privately provisioned Actions secrets; APK-SIZE.txt states the actual mode. Rust/JVM/UI tests and real API35 x86_64 TUN regressions pass before publication. Physical ARM, mobile handoff, long-duration stability and Tehran latency remain unverified."
       - name: Failure diagnostics
         if: failure()
         run: python3 android/scripts/ci-diagnostics.py
@@ -124,3 +127,5 @@ jobs:
             android/continuum-screen.png
             android/release/APK-SIZE.txt
             android/release/SIGNING-CERTIFICATE.txt
+            android/release/INSTALLATION.txt
+            android/release/nyx-0.6.0-arm64.apk
