@@ -89,6 +89,9 @@ def test_xray(binary, pool, control, peer):
                                            'socks5h://127.0.0.1:10810', 'http://1.1.1.1:18082/'],
                                           capture_output=True, timeout=5)
             assert unauthorized.returncode != 0
+            lease_result = run(control, sys.executable, str(Path(__file__).with_name('egress_lease_kernel.py').resolve()),
+                               binary, str(Path(directory) / 'client.json'))
+            assert 'authenticated-lease-tcp-udp-and-revocation-passed' in lease_result.stdout
             # With the interface down, existing ingress still cannot escape directly.
             run(pool.namespace, 'ip', 'link', 'set', 'nyx-vpn', 'down')
             failed = subprocess.run(['ip', 'netns', 'exec', control, 'curl', '--fail', '--silent',
@@ -100,7 +103,8 @@ def test_xray(binary, pool, control, peer):
             response = run(control, 'curl', '--fail', '--silent', '--show-error', '--max-time', '10',
                            '--noproxy', '', '--proxy', 'socks5h://127.0.0.1:10809', 'http://1.1.1.1:18082/')
             assert response.stdout == 'nyx-encrypted-path'
-            return ['Xray VLESS/WS carries TCP and UDP through real local WireGuard',
+            return ['Authenticated per-user lease carries TCP and framed UDP through Xray/WireGuard; revocation blocks requests (synthetic local geography)',
+                    'Xray VLESS/WS carries TCP and UDP through real local WireGuard',
                     'Incorrect VLESS identity cannot access the pool',
                     'Tunnel-down blocks Xray requests; new requests recover after tunnel-up']
         finally:

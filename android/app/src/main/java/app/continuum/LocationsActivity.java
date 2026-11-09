@@ -32,7 +32,7 @@ public final class LocationsActivity extends Activity {
         LinearLayout header=new LinearLayout(this);header.setGravity(Gravity.CENTER_VERTICAL);
         TextView back=text("‹  Back",14,ACCENT);back.setMinHeight(dp(48));back.setGravity(Gravity.CENTER_VERTICAL);back.setOnClickListener(v->finish());header.addView(back,new LinearLayout.LayoutParams(0,-2,1));
         refresh=text("Refresh",14,ACCENT);refresh.setTag("refresh-catalog");refresh.setMinHeight(dp(48));refresh.setGravity(Gravity.CENTER_VERTICAL);refresh.setOnClickListener(v->fetch());header.addView(refresh);root.addView(header);
-        TextView title=text("Exit locations",32,INK);title.setTypeface(Typeface.create("sans-serif-light",0));root.addView(title);
+        TextView title=text("Exit locations",32,INK);title.setTypeface(Typeface.create("sans-serif-light",Typeface.NORMAL));root.addView(title);
         summary=text("30 targets · 0 available exits",13,MUTED);summary.setPadding(0,dp(12),0,dp(12));root.addView(summary);
         TextView note=text("Your default connection stays unchanged. Discovery is not availability; no country is enabled until an approved live pool is ready.",12,MUTED);note.setPadding(0,0,0,dp(16));root.addView(note);
         search=new EditText(this);search.setTag("country-search");search.setSingleLine(true);search.setHint("Search a country or code");search.setTextSize(15);search.setTextColor(INK);search.setHintTextColor(MUTED);search.setMinHeight(dp(48));root.addView(search);
