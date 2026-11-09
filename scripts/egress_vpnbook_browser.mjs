@@ -127,7 +127,7 @@ if (report.inspection) {
   if (report.inspection.inline_blocks) console.log(`::notice title=Nyx configuration block types::${report.inspection.inline_blocks.join(',')}`);
 }
 if (report.live_probe) {
-  console.log(`::notice title=Nyx bounded provider test::${report.live_probe.status}; country_verified=${report.live_probe.country_verified === true}; UDP_DNS=${report.live_probe.udp_dns_passed === true}; host_routes_unchanged=${report.live_probe.host_main_routes_unchanged === true}`);
+  console.log(`::notice title=Nyx bounded provider test::${report.live_probe.status}; stage=${report.live_probe.failed_stage || 'complete'}; daemon_alive=${report.live_probe.openvpn_alive_at_failure === true}; country_verified=${report.live_probe.country_verified === true}; UDP_DNS=${report.live_probe.udp_dns_passed === true}; host_routes_unchanged=${report.live_probe.host_main_routes_unchanged === true}`);
 }
 for (const text of report.remaining_controls || []) {
   console.log(`::notice title=Nyx remaining control::${text.replace(/%/g, '%25').replace(/\r/g, '%0D').replace(/\n/g, '%0A')}`);

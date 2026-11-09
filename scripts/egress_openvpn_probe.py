@@ -11,6 +11,7 @@ import os
 from pathlib import Path
 import re
 import socket
+import signal
 import subprocess
 import tempfile
 import time
@@ -136,6 +137,8 @@ def probe(envelope):
               'status': 'not_connected', 'country_verified': False, 'connection_tested': True}
     namespace_created, resolver_created, moved = False, False, False
     process = None
+    paused = False
+    stage = 'namespace_setup'
     resolver_dir = Path('/etc/netns') / ns
     baselines = [run('ip', '-j', family, 'route', 'show', 'table', 'main') for family in ['-4', '-6']]
     with tempfile.TemporaryDirectory(prefix='nyx-openvpn-probe-') as temporary:
@@ -164,22 +167,34 @@ def probe(envelope):
                        '--log', str(log), '--connect-retry-max', '1', '--connect-timeout', '10',
                        '--auth-retry', 'none', '--remap-usr1', 'SIGTERM', '--allow-compression', 'no',
                        '--pull-filter', 'reject', 'comp-lzo', '--pull-filter', 'reject', 'compress']
+            stage = 'openvpn_start'
             process = subprocess.Popen(command, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
                                        env={'PATH': '/usr/sbin:/usr/bin:/sbin:/bin'})
+            stage = 'authenticate'
             address = wait_connected(management, process)
             result['handshake_completed'] = True
+            # Quiesce the owned process during interface down/move/up so a TUN
+            # read cannot observe the transient down state and trigger recovery.
+            stage = 'move_tun'
+            process.send_signal(signal.SIGSTOP)
+            paused = True
             run('ip', 'link', 'set', device, 'netns', ns)
             moved = True
+            stage = 'configure_tun'
             run('ip', '-n', ns, 'link', 'set', device, 'name', 'nyx-vpn')
             run('ip', '-n', ns, 'addr', 'add', address + '/32', 'dev', 'nyx-vpn')
             run('ip', '-n', ns, 'link', 'set', 'nyx-vpn', 'up')
             run('ip', '-n', ns, 'route', 'add', 'default', 'dev', 'nyx-vpn')
+            process.send_signal(signal.SIGCONT)
+            paused = False
+            stage = 'udp_dns'
             udp = run('ip', 'netns', 'exec', ns, 'python3', '-c', DNS_UDP_PROBE, timeout=6)
             if udp.strip() != 'dns-udp-ok':
                 raise ProbeError('udp_probe_failed')
             result['udp_dns_passed'] = True
             results = []
-            for url in ['https://api.ipify.org?format=json', 'https://ifconfig.co/json', 'https://ipwho.is/']:
+            for index, url in enumerate(['https://api.ipify.org?format=json', 'https://ifconfig.co/json', 'https://ipwho.is/']):
+                stage = ['https_ip_echo', 'https_geo_first', 'https_geo_second'][index]
                 body = run('ip', 'netns', 'exec', ns, 'curl', '--fail', '--silent', '--show-error',
                            '--connect-timeout', '5', '--max-time', '10', '--max-filesize', '32768',
                            '--proto', '=https', '--noproxy', '*', url, timeout=12)
@@ -193,6 +208,7 @@ def probe(envelope):
                           country_verified=agreement, independent_ip_agreement=len(set(addresses)) == 1,
                           observed_countries=[c if isinstance(c, str) and re.fullmatch('[A-Z]{2}', c) else 'unknown' for c in countries],
                           https_and_dns_passed=True)
+            stage = 'tunnel_drop'
             process.terminate()
             process.wait(timeout=5)
             try:
@@ -208,10 +224,14 @@ def probe(envelope):
             if log.exists():
                 with log.open(errors='replace') as stream:
                     diagnostic = stream.read(65536)
+            result['failed_stage'] = stage
+            result['openvpn_alive_at_failure'] = process is not None and process.poll() is None
             result['status'] = ('post_handshake_probe_failed' if result.get('handshake_completed') else
                                 classify_log(diagnostic))
         finally:
             if process and process.poll() is None:
+                if paused:
+                    process.send_signal(signal.SIGCONT)
                 process.terminate()
                 try:
                     process.wait(timeout=3)
