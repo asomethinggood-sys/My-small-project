@@ -35,6 +35,16 @@ try {
       if (await links.count() === 1) {button = links.first(); break;}
     }
   }
+  if (!button) {
+    // Current official UI is a server selector followed by protocol selectors,
+    // rather than a static ZIP link. Use those controls without guessing APIs.
+    const server = page.getByRole('button', {name: /Germany Server 1.*de20\\.vpnbook\\.com/i});
+    if (await server.count() === 1) {
+      await server.click({timeout: 10000});
+      const protocol = page.getByRole('button', {name: /UDP 53/i});
+      if (await protocol.count() === 1) button = protocol;
+    }
+  }
   if (!button) report.status = 'no_unambiguous_german_download_control';
   else {
     const text = await button.innerText();
@@ -44,6 +54,11 @@ try {
       // Attach rejection handling before the click, to avoid unhandled timeout.
       const pending = downloadPromise.catch(() => null);
       await button.click({timeout: 10000});
+      const confirm = page.getByRole('button', {name: /download/i});
+      if (await confirm.count() === 1) {
+        const label = await confirm.innerText();
+        if (!/verify|captcha|check/i.test(label)) await confirm.click({timeout: 10000});
+      }
       const download = await pending;
       if (!download) report.status = 'download_not_started_or_verification_required';
       else {
