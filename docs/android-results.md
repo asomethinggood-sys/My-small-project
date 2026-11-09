@@ -1,60 +1,76 @@
-# Continuum 0.2 preview — download and verification
+# Continuum 0.3 — website compatibility and connection optimization
 
-## Complete APK (not an artifact ZIP)
+## Full APK
 
-[Download continuum-0.2.0-arm64.apk](https://github.com/asomethinggood-sys/My-small-project/releases/download/continuum-0.2.0-preview-13/continuum-0.2.0-arm64.apk)
+[Download continuum-0.3.0-arm64.apk](https://github.com/asomethinggood-sys/My-small-project/releases/download/continuum-0.3.0-preview-15/continuum-0.3.0-arm64.apk)
 
-- Android 8+; **ARM64 only**. Not an x86 or 32-bit ARM installer.
-- Download size: **19,057,107 bytes — 19.06 MB / 18.17 MiB**.
-- SHA256: `c20081b5b977448cebf497061f06659e2603ee47194b0e6e06e1da59831574cc`.
-- Non-debuggable, R8/resource-shrunk release build with compressed ARM64 JNI libraries. Installed storage is larger than the download.
-- Preview certificate, not a stable production signing identity. If Android rejects an update, uninstall the previous preview first; this deletes settings.
-- [Release, source and licenses](https://github.com/asomethinggood-sys/My-small-project/releases/tag/continuum-0.2.0-preview-13).
+- Android 8+; ARM64 only. Direct installer, not an artifact ZIP.
+- **19,059,871 bytes — 19.06 MB / 18.18 MiB.** Installed storage is larger.
+- SHA256: `db9a09202faf459131a3517ede1c50ece630bf8ac3f341be39e4a14cef5070b9`.
+- Non-debuggable, shrunk/compressed release APK; preview signer. Uninstall the previous preview if signatures differ, which deletes its settings.
+- [Release, exact application source, native source references and licenses](https://github.com/asomethinggood-sys/My-small-project/releases/tag/continuum-0.3.0-preview-15).
 
-## Changes responding to the reported defects
+## What changed
 
-Disconnect now explicitly closes the TUN and native engine instead of waiting for `onDestroy()`. The VPN runs in a separate process; Binder carries status to the UI. Generation tokens discard stale asynchronous results. A saved pause prevents sticky/system Always-on start actions from undoing a manual disconnect. A bounded shutdown watchdog can terminate only the VPN process if native shutdown blocks.
+### Website compatibility
 
-HTTPS updates have cancellation and bounded timeouts. Unchanged healthy endpoints are probed every five minutes rather than on every subscription poll. Subscription polling remains selectable at 30/60/120 seconds. The health metric is an endpoint HTTPS check, not proof that every app's traffic is working or a raw ping.
+Previously the TUN handed ordinary UDP DNS to public resolvers through the server. That path depends on working server-side UDP/53. It also returned IPv6 destinations even when the remote server might have no IPv6 connectivity, and did not recover hostnames from application traffic.
 
-Actual imported configurations support:
+The new Android-side configuration:
 
-| Protocol | Supported combinations |
-| --- | --- |
-| VLESS | TCP + TLS, WebSocket + TLS |
-| VMess AEAD | TCP + TLS, WebSocket + TLS |
-| Trojan | TCP + TLS, WebSocket + TLS |
-| Shadowsocks | SIP002; aes-128-gcm, aes-256-gcm, chacha20-ietf-poly1305; TCP/UDP |
+- Intercepts TUN TCP/UDP port 53 into Xray's DNS outbound. A/AAAA resolution uses cached, certificate-verified **DNS-over-HTTPS through the selected proxy**, with Cloudflare and Google upstreams. No direct/freedom DNS fallback is configured.
+- Defaults to IPv4 DNS answers for compatibility with IPv4-only servers. Settings can enable dual-stack answers. IPv6 routes stay inside the VPN in either mode; this is not an IPv6 bypass.
+- Enables HTTP Host/TLS SNI destination recovery. A stale/poisoned destination IP can be replaced by the hostname for remote resolution; TLS content is not decrypted.
+- Uses matched Android/native TUN MTUs, default **1400**, with **1280/1400/1500** selectable. These are compatibility options, not guaranteed speed improvements.
 
-Protocols, transports and encryption are separate layers, not independent VPN alternatives. Other combinations require a compatible server profile. The default project subscription remains VLESS + WebSocket + TLS, unchanged. Plain VLESS, REALITY, plugins, insecure certificate options and unsupported profile options are rejected. No Worker deployment or server purchase is required for the existing subscription.
+Important limits: apps using their own DoH/DoT may bypass this DNS-answer policy. ECH, IP literals, cached IPv6 records and non-HTTP/TLS traffic may not have a usable hostname to recover. Xray's DNS outbound handles A/AAAA; its default response to other record types is empty. No specific user-reported domain was supplied, so that exact failure is not yet reproduced or declared fixed.
 
-## Verified evidence
+### Connection and idle work
 
-Successful workflow: [42525696093](https://github.com/asomethinggood-sys/My-small-project/actions/runs/42525696093), application source commit `2d0f11d`.
+- Cold start opens the real core/TUN before its reachability check, rather than constructing a disposable preflight core first. Replacing an existing endpoint still verifies the candidate before replacement.
+- Health checks use the running core, retaining its DNS cache and existing sessions.
+- A failed health-check website no longer causes automatic destruction of an otherwise-running engine. A second check endpoint is tried if the first fails. These remain HTTP checks, not ping or proof that every destination is reachable.
+- Check now and physical-network changes invalidate the health cache immediately.
+- Normal manual profiles schedule checks at **300 seconds screen-on / 900 seconds screen-off**, instead of waking every minute just to skip a health probe.
+- Automatic subscription polling preserves the selected 30/60/120-second interval while interactive, with a minimum 120 seconds when screen-off. Health checks are five minutes interactive, fifteen minutes screen-off. Failed checks have separate retry backoff. No-network state avoids outbound probes and waits for callbacks, with a 120-second fallback check.
+- UI status uses Binder pushes rather than per-second Binder polling. Settings/profile parsing is no longer repeated for every visible countdown tick. Unchanged notifications and status-ring redraws are suppressed. UI timers stop when the screen is not visible.
+- No wake locks, exact alarms, speculative multiplexing or unmeasured socket tuning were added.
 
-- Compilation, **18 JVM tests**, debug and release Android lint, and compressed single-ABI release packaging passed.
-- **Two Android API 35 x86_64 instrumentation tests passed.** These now exercise a real Android VPN, not just native startup:
-  - Four controlled profiles: Shadowsocks aes-128-gcm plus VLESS, VMess and Trojan over WebSocket + certificate-verified TLS.
-  - A separate probe app UID reached `198.18.0.42` through Android TUN and the proxy. Only the fixture server redirects that benchmark address to a local marker response. The main app UID bypasses TUN, so testing from that UID would not have proved this path.
-  - The real UI Disconnect button closed reported native/TUN resources and removed the Android VPN network while an observer kept the service bound.
-  - A simulated system Always-on start action did not undo the saved pause.
-  - Disconnect during a blocked HTTPS subscription request, subsequent reconnect, second disconnect and absence of stale-work resurrection passed.
-- The temporary protocol servers were CI fixtures only. No production config, server workflow or Worker was changed.
-- Earlier failed runs caught a private-address restriction in the fixture, cross-test cleanup interference, and a missing-path VMess parser bug. The passing run includes their corrections.
+These are reductions in scheduled work, not a measured battery percentage. Longer screen-off subscription intervals can delay endpoint discovery. No latency improvement versus 0.2 is claimed without a controlled A/B measurement.
 
-## Not yet verified
+## Verification
 
-The shipped ARM64 release binary has not been run on a physical phone; runtime testing used the x86_64 debug build of the same source. TCP+TLS variants and other Shadowsocks methods have parser/config tests, not the four-profile live fixture coverage above. No claim is made for exhaustive UDP/DNS/IPv6 leaks, live subscription handover, Wi-Fi/mobile transitions, actual OEM Always-on/lockdown behavior, watchdog fault injection, battery usage, 24-hour stability or Tehran latency.
+Passing run: [42605622200](https://github.com/asomethinggood-sys/My-small-project/actions/runs/42605622200).
+Built application source: `357c0051150d0d8156c3acf791504dc5881ebb76`.
 
-Client recovery cannot remove backend downtime or preserve existing TCP sessions across server replacement. No under-200-ms or uninterrupted-service claim is made.
+- **27 JVM tests**, debug/release lint and ARM64 release packaging passed.
+- Two API 35 x86_64 instrumentation tests passed. A separate app UID exercised ten checks for each of four live fixture profiles (Shadowsocks aes-128-gcm; VLESS, VMess and Trojan over WS+TLS):
+  1. Proxy-only TCP marker.
+  2. UDP DNS A query, with the server explicitly blocking port 53.
+  3. TCP DNS A query.
+  4. Repeated cached A query.
+  5. Empty AAAA response in IPv4-answer mode.
+  6. HTTP Host recovery from an unusable destination IP.
+  7. Exactly validated 524,288-byte download.
+  8. Exactly validated 65,536-byte upload/echo.
+  9. Exactly validated 1,200-byte UDP echo.
+  10. Real `https://example.com/` with normal certificate validation.
+- MTUs 1280, 1400 and 1500 were exercised across these fixtures.
+- Explicit Check now, bound-service Disconnect, saved pause after a simulated system start, cancelled-fetch reconnect and stale-work rejection passed.
+- [Full runner network report](https://github.com/asomethinggood-sys/My-small-project/releases/download/continuum-0.3.0-preview-15/network-report.txt).
 
-## Install and check
+Runner Connected times were 770/1840/1209/838 ms for the four fixtures. These are one run on a hosted emulator, not Tehran, not physical ARM, not raw ping, not an A/B speed comparison and not a promise for the production subscription. Per-operation timings include emulator scheduling; a repeated DNS query was not always faster.
 
-1. Download the APK above; uninstall the old preview first if signatures differ.
-2. Install, open Continuum, tap Connect and accept Android VPN permission.
-3. Keep the default automatic project subscription, or import a matching server URI from the connection-profile selector.
-4. Test browsing in another app, then tap Disconnect. Verify the Android VPN indicator disappears and does not immediately return.
-5. If Android's **Block connections without VPN** is enabled, it can intentionally block Internet after disconnect. Disable lockdown when testing ordinary Internet with the VPN off.
-6. Test network changes, screen-off recovery and a long session on your own phone before relying on this preview. Report device/Android version and observed state without publishing private profile credentials.
+The initial expanded run passed DNS/Host/large-download checks but failed its HTTP upload with an unexpected EOF against the simple HTTP/1.0 fixture. The fixture now uses explicit HTTP/1.1 framing and self-tests its upload echo before Android starts; all four upload cases then passed. This does not establish universal HTTP/1.0 compatibility or identify the user's unnamed failing websites.
 
-No PR or main-branch merge was opened. All application work remains on `arena/f056ce38-my-small-project`.
+## Phone test
+
+1. Install the new APK; uninstall the old preview only if Android rejects its signature. Accept VPN permission and keep the existing automatic subscription.
+2. Start with **IPv4 answers + MTU 1400**. Reopen affected browser tabs after reconnecting so stale DNS/connections are not reused.
+3. If page transfers still stall, try MTU 1280. Settings changes rebuild the engine and interrupt existing sessions.
+4. If a browser or Android uses custom secure DNS, record that setting when reporting failures; it may bypass the app's DNS policy. Do not assume all website failures are DNS failures.
+5. Report affected domains, phone/Android version, Wi-Fi versus mobile, which other client works with the same profile, and whether failure is DNS error, TLS error or timeout. Do not publish private profile credentials.
+
+Still unverified: the user's exact sites, physical ARM release runtime, real ISP/Tehran latency, battery/CPU A/B measurements, long-duration stability, full IPv6/leak matrix, real OEM lockdown/Always-on behavior, and production rotation/handoff. Client changes cannot eliminate backend outages or migrate established TCP sessions between servers.
+
+Production subscription/server workflows were not changed. No PR or main-branch merge was opened. Work remains on `arena/f056ce38-my-small-project`.

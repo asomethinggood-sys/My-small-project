@@ -1,50 +1,49 @@
 # Continuum — standalone Android VPN preview
 
-Original native Android UI, real AndroidLibXrayLite/Xray TUN engine; not a v2rayNG fork, WebView prototype or companion launcher. Android 8+.
+Original native Android UI with real AndroidLibXrayLite/Xray TUN, not a v2rayNG fork or WebView prototype. Android 8+.
 
 ## Download
 
-[Complete ARM64 APK — 19.06 MB](https://github.com/asomethinggood-sys/My-small-project/releases/download/continuum-0.2.0-preview-13/continuum-0.2.0-arm64.apk)
+[Complete 0.3 ARM64 APK — 19.06 MB](https://github.com/asomethinggood-sys/My-small-project/releases/download/continuum-0.3.0-preview-15/continuum-0.3.0-arm64.apk)
 
-[Measured results, checksums, installation and test limitations](../docs/android-results.md).
+[Results, checksum, connection changes and phone test instructions](../docs/android-results.md).
 
-The release is non-debuggable and compressed, but signed with a preview certificate. Updates between runners may require uninstalling the old preview, deleting its settings. A privately retained signing identity is needed for a production update channel; no signing keys belong in this repository.
+Non-debuggable release build with code/resource shrinking and compressed single-ABI JNI. Preview signing keys differ between runners: uninstall the old preview if signatures conflict, deleting its settings. A privately retained signing identity is required for production updates. Never commit signing keys.
 
 ## Implemented
 
-- Native off-white/green UI, measured HTTP delay (not ping), endpoint, activity history, import and selection of real server profiles.
-- VLESS, VMess AEAD and Trojan over TCP+TLS or WebSocket+TLS. Shadowsocks SIP002 using aes-128-gcm, aes-256-gcm or chacha20-ietf-poly1305 over TCP/UDP.
-- Protocol, transport and encryption are different layers. Importing a different protocol requires a compatible server; no fake transport switches reconfigure the remote endpoint.
-- Existing public rotating VLESS/WS/TLS subscription remains the default. No Worker/domain/VPS setup is required for that connection.
-- Strict unsupported-option rejection, certificate verification, HTTPS-only subscription requests, bounded payloads and timeouts, candidate preflight and verified-profile caching.
-- Subscription polls at 30/60/120 seconds; healthy unchanged profiles get an endpoint check every five minutes. Failed checks retry with bounded backoff.
-- Dedicated `:vpn` process, Binder UI status, explicit Disconnect resource teardown, cancelled-generation rejection and a native-stop watchdog that cannot kill the UI process.
-- Manual pause persists across sticky/system start actions; only explicit Connect clears it. Android lockdown may still block ordinary Internet after disconnect.
+- Native status UI, real HTTP-check timing (not ping), endpoint, session duration, activity history and imported server profiles.
+- VLESS/VMess AEAD/Trojan over TCP+TLS or WS+TLS; Shadowsocks SIP002 AEAD methods. Changing protocols requires a matching remote server, not a cosmetic toggle.
+- Existing automatic VLESS/WS/TLS public subscription remains the default. No Worker/domain/VPS setup is required for it.
+- Isolated VPN process, explicit Disconnect teardown, generation-safe async work, persistent manual pause and a bounded native-stop watchdog.
+- Proxied cached DoH for TUN DNS, IPv4-answer compatibility default with optional dual-stack answers, HTTP Host/TLS SNI recovery, and matched 1280/1400/1500 MTUs (default 1400).
+- Immediate real-core startup rather than duplicate preflight cores on cold connect; candidate verification remains for replacing an active profile. Health checks use the active engine and two possible endpoints, and no longer restart a running engine just because a check endpoint failed.
+- Network changes and Check now force health checks. Screen-off scheduling reduces ordinary health checks to once per fifteen minutes and subscription polling to no faster than every 120 seconds. Manual profiles have no subscription fetches. Failed/offline states have separate retry policies.
+- Push-based UI status; no per-second Binder request, settings parse or unchanged notification refresh. No wake locks or exact alarms.
 
-The app UID bypasses its own TUN so the core transport and subscription requests cannot recurse through it. Other apps use the VPN. This is not a certified kill switch: validate DNS, IPv6, lockdown and OEM behavior before using a preview for sensitive traffic.
+The app UID bypasses its own TUN to avoid recursion. Other apps are routed through the VPN, including IPv6 routes even in IPv4-answer mode. Custom app/browser secure DNS can bypass the DNS policy. Xray DNS outbound handles A/AAAA and returns empty answers for other record types by default. Hostname recovery cannot recover every encrypted/absent hostname. This preview is not a certified kill switch or an exhaustive compatibility guarantee.
 
 ## Build
 
-JDK 21, Gradle 8.11.1, AGP 8.9.2, Android SDK 35; Java 17 bytecode.
+JDK 21, Gradle 8.11.1, AGP 8.9.2, SDK 35; Java 17 bytecode.
 
 ```sh
 cd android
 bash scripts/fetch-core.sh
-# Default is ARM64, not a four-ABI universal APK.
 gradle :app:testDebugUnitTest :app:lintDebug :app:assembleDebug
 gradle -PtargetAbi=arm64-v8a :app:assembleRelease :app:lintRelease
-# Emulator instrumentation uses a separate x86_64 build.
+# Separate test ABI / test-only second UID:
 gradle -PtargetAbi=x86_64 :app:assembleDebug :probe:assembleDebug
 ```
 
-`Android client` CI builds both ABIs, tests JVM logic/lint, and runs actual Android TUN traffic through temporary protocol fixtures. A tiny separate-UID `:probe` APK proves the VPN path; it is test-only and is not shipped with Continuum. CI tests real disconnect while bound, saved pause and reconnect after a stalled fetch. Only successful task-branch builds publish a full APK as a separate prerelease asset; the production `vpn-config` release is untouched.
+CI tests JVM logic/lint and real Android TUN traffic on API 35 x86_64: blocked-server-DNS compatibility, IPv4 answer policy, hostname recovery, HTTPS, uploads, downloads and UDP across four protocols, plus bound-service Disconnect and cancelled-fetch reconnect. The `:probe` app is test-only and never ships with Continuum. Successful task-branch builds publish full APKs as separate prereleases; `vpn-config` is untouched.
 
-Source/license/relinking information: [THIRD_PARTY.md](THIRD_PARTY.md). The native AAR is pinned by version and SHA256. APK size is measured during CI; installed storage includes extracted native code and will be larger.
+[THIRD_PARTY.md](THIRD_PARTY.md) contains native source, license and relinking references. The native AAR is pinned by version/SHA256. Installed storage exceeds compressed APK size.
 
-## Limits and phone acceptance
+## Limits
 
-API 35 x86_64 emulator tests are not physical ARM64 testing, Tehran measurements, exhaustive leak tests or 24-hour stability evidence. TCP+TLS imports and all supported Shadowsocks methods have configuration tests; live fixture traffic covers VLESS/VMess/Trojan WS+TLS and Shadowsocks aes-128-gcm. Test Wi-Fi/mobile handoff, Doze, process death, real Always-on/lockdown and a full rotation on the actual phone.
+These changes reduce scheduled work; they are not measured battery or ping improvements. The default 1400 MTU is a compatibility choice, not a throughput claim. Longer screen-off polling can delay discovery. Native endpoint checks use gstatic generate_204 with a Cloudflare fallback and do not prove the complete TUN path on the phone.
 
-No client can remove backend outages, guarantee a latency target or migrate existing TCP sessions to a replacement server. HTTP checks use `https://www.gstatic.com/generate_204`, not raw RTT or throughput. Settings/configs are private to the app and backups are disabled, but the default proxy remains publicly shared.
+Physical ARM release testing, the user's exact failing sites, Tehran latency, real network handoffs, OEM lockdown, exhaustive IPv6/leak tests and long-duration stability remain pending. No client can remove server outages or migrate established TCP connections across replacement backends. The default proxy is public/shared.
 
-To roll back, disconnect, disable Android Always-on/lockdown if enabled, then uninstall. The existing v2rayNG subscription and server workflows are unchanged.
+For rollback, disconnect, disable Android Always-on/lockdown if enabled, then uninstall. Existing server workflows and the v2rayNG subscription remain unchanged.
