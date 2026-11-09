@@ -60,6 +60,8 @@ pub extern "system" fn Java_app_continuum_RustCore_exitEligibility(_:Env,_:Class
 pub extern "system" fn Java_app_continuum_RustCore_connectionPhase(_:Env,_:Class,r:u8,t:u8,e:u8,v:u8,s:u8)->i32 {nyx::phase(r!=0,t!=0,e!=0,v!=0,s!=0)}
 #[no_mangle]
 pub extern "system" fn Java_app_continuum_RustCore_motionProgress(_:Env,_:Class,e:i64,d:i64,r:u8)->i32 {nyx::motion(e,d,r!=0)}
+#[no_mangle]
+pub extern "system" fn Java_app_continuum_RustCore_leaseAction(_:Env,_:Class,n:i64,d:i64,s:u8)->i32 {nyx::lease_action(n,d,s!=0)}
 #[cfg(test)]
 mod tests {
     use super::*;

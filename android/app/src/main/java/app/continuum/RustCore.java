@@ -19,4 +19,5 @@ public final class RustCore {
     public static native int exitEligibility(long now,long generated,long expires,int verified,int flags);
     public static native int connectionPhase(boolean running,boolean tun,boolean engine,boolean verified,boolean stopping);
     public static native int motionProgress(long elapsed,long duration,boolean reducedMotion);
+    public static native int leaseAction(long now,long deadline,boolean sameSelection);
 }

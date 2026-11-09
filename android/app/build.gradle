@@ -11,19 +11,30 @@ android {
         applicationId 'app.nyx.vpn'
         minSdk 26
         targetSdk 35
-        versionCode 5
-        versionName '0.5.0-preview'
+        versionCode 6
+        versionName '0.6.0-candidate'
         ndk { abiFilters.add(targetAbi) }
         testInstrumentationRunner 'androidx.test.runner.AndroidJUnitRunner'
         buildConfigField 'String', 'BUILD_ABI', '"' + targetAbi + '"'
     }
     buildFeatures { buildConfig true }
     compileOptions { coreLibraryDesugaringEnabled true; sourceCompatibility JavaVersion.VERSION_17; targetCompatibility JavaVersion.VERSION_17 }
-    packaging { jniLibs { useLegacyPackaging true } }
+    // Direct, page-aligned loading avoids native-library extraction at install.
+    packaging { jniLibs { useLegacyPackaging false } }
     testOptions { unitTests.all { dependsOn rustTask; jvmArgs "-Djava.library.path=${rootDir}/rust-core/target/release" } }
     signingConfigs {
+        debug {
+            enableV1Signing true
+            enableV2Signing true
+            enableV3Signing true
+            enableV4Signing false
+        }
         if (System.getenv('CONTINUUM_KEYSTORE_PATH')) {
             stable {
+                enableV1Signing true
+                enableV2Signing true
+                enableV3Signing true
+                enableV4Signing false
                 storeFile file(System.getenv('CONTINUUM_KEYSTORE_PATH'))
                 storePassword System.getenv('CONTINUUM_STORE_PASSWORD')
                 keyAlias System.getenv('CONTINUUM_KEY_ALIAS')

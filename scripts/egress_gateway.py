@@ -159,6 +159,42 @@ class Handler(http.server.BaseHTTPRequestHandler):
             return self._reply(409, {'error': 'request_unavailable_no_fallback'})
 
     def do_GET(self):
+        if self.path == '/v1/availability':
+            try:
+                owner, _ = self._identity()
+            except Denied:
+                return self._reply(401, {'error': 'authentication_required'})
+            controller = self.server.controller
+            with controller.lock:
+                try:
+                    controller._limit(owner)
+                    controller.sweep()
+                except ValueError:
+                    return self._reply(429, {'error': 'request_budget_exceeded'})
+                countries = {}
+                if controller.healthy:
+                    with controller.sessions.lock:
+                        controller.sessions._prune()
+                        now = controller.sessions.clock()
+                        for pool_id, pool in controller.sessions.pools.items():
+                            evidence = pool['evidence']
+                            if not pool['ready'] or pool_id not in self.server.profiles or not evidence or not evidence.udp:
+                                continue
+                            ttl = math.floor(evidence.expires_at-now)
+                            if ttl < 10:
+                                continue
+                            row = countries.setdefault(pool['country'], {'country': pool['country'], 'pool_count': 0,
+                                       'providers': set(), 'protocols': set(), 'expires_in': 300, 'udp': True})
+                            row['pool_count'] += 1
+                            row['providers'].add(pool['provider'])
+                            row['protocols'].add(pool['protocol'])
+                            row['expires_in'] = min(row['expires_in'], ttl)
+                for row in countries.values():
+                    row['provider_count'] = len(row['providers'])
+                    row['providers'] = sorted(row['providers'])
+                    row['protocols'] = sorted(row['protocols'])
+                return self._reply(200, {'schema_version': 1, 'purpose': 'authenticated_live_availability',
+                                         'countries': list(countries.values())})
         if (self.headers.get('Upgrade', '').lower() != 'websocket'
                 or 'upgrade' not in [v.strip().lower() for v in self.headers.get('Connection', '').split(',')]
                 or self.headers.get('Transfer-Encoding') or self.headers.get('Content-Length') not in (None, '0')):

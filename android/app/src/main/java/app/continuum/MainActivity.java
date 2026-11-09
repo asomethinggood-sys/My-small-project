@@ -21,6 +21,7 @@ public final class MainActivity extends Activity {
     private StateClient client;
     private SettingsStore store;
     private Profile selected;
+    private String selectedCountry="";
     private final Runnable update=new Runnable(){public void run(){render();handler.postDelayed(this,1000);}};
     @Override public void onCreate(Bundle saved){
         super.onCreate(saved);client=new StateClient(this);store=new SettingsStore(this);
@@ -50,7 +51,7 @@ public final class MainActivity extends Activity {
         TextView build=text("NYX  /  "+BuildConfig.VERSION_NAME+"  ·  RUST CORE + XRAY",9,MUTED);build.setLetterSpacing(.08f);add(root,build,24,0);
     }
     private void render(){
-        VpnStatus s=client.status;state.setText(s.state);detail.setText(s.detail);endpoint.setText(s.host);latency.setText(s.latency<0?"—":s.latency+" ms");
+        VpnStatus s=client.status;state.setText(s.state);detail.setText(!s.running&&!selectedCountry.isEmpty()?selectedCountry+" selected · no default fallback":s.detail);endpoint.setText(s.host);latency.setText(s.latency<0?"—":s.latency+" ms");
         boolean stopping="Disconnecting".equals(s.state);connect.setText(stopping?"Disconnecting…":s.running?"Disconnect":"Connect");connect.setEnabled(!stopping);connect.setAlpha(stopping?.6f:1f);
         protocolName.setText(s.running?s.protocol:selected==null?"VLESS":selected.protocolLabel());transportName.setText((s.running?s.transport:selected==null?"WebSocket · TLS":selected.transportLabel())+"  ›");
         long duration=s.connectedAt==0?0:(SystemClock.elapsedRealtime()-s.connectedAt)/1000;
@@ -58,7 +59,7 @@ public final class MainActivity extends Activity {
         countdown.setText(s.running?"Next check in "+Math.max(0,(s.nextCheck-SystemClock.elapsedRealtime())/1000)+"s":"Updates while connected");
         orbit.phase(RustCore.connectionPhase(s.running,s.tunOpen,s.engineRunning,"Connected".equals(s.state),stopping));
     }
-    private void selectionChanged(){try{String manual=SettingsStore.manual(store.load());selected=manual==null?null:Profile.parse(manual);}catch(Exception ignored){selected=null;}}
+    private void selectionChanged(){try{JSONObject settings=store.load();selectedCountry=settings.optString("country","");String manual=SettingsStore.manual(settings);selected=manual==null?null:Profile.parse(manual);}catch(Exception ignored){selected=null;}}
     private void toggle(){
         if(client.status.running){client.disconnect();render();toast("Disconnect requested. Disable Android lockdown if it blocks Internet while paused.");return;}
         Intent consent=VpnService.prepare(this);if(consent!=null)startActivityForResult(consent,10);else startVpn();
@@ -76,7 +77,7 @@ public final class MainActivity extends Activity {
             for(int i=0;i<saved.length();i++){Profile p=Profile.parse(saved.getJSONObject(i).getString("uri"));names[i+1]=p.label+" · "+p.protocolLabel()+" / "+p.transportLabel();}
             new AlertDialog.Builder(this).setTitle("Connection profiles")
                 .setSingleChoiceItems(names,settings.optInt("selection",-1)+1,(dialog,index)->{
-                    try{settings.put("selection",index-1);store.save(settings);selectionChanged();client.refresh();render();dialog.dismiss();}catch(Exception e){toast("Could not save the selected profile");}
+                    try{settings.put("selection",index-1).put("country","");store.save(settings);selectionChanged();client.refresh();render();dialog.dismiss();}catch(Exception e){toast("Could not save the selected profile");}
                 }).setPositiveButton("Import profile",(d,w)->importProfile()).setNeutralButton("How protocols work",(d,w)->protocolInfo()).setNegativeButton("Close",null).show();
         }catch(Exception e){toast("Could not load profiles");}
     }
@@ -90,7 +91,7 @@ public final class MainActivity extends Activity {
         AlertDialog dialog=new AlertDialog.Builder(this).setTitle("Import a server profile").setView(box).setPositiveButton("Import",null).setNegativeButton("Cancel",null).create();
         dialog.setOnShowListener(d->dialog.getButton(AlertDialog.BUTTON_POSITIVE).setOnClickListener(v->{try{
             String uri=Profile.single(input.getText().toString());Profile p=Profile.parse(uri);JSONObject settings=store.load();JSONArray entries=settings.getJSONArray("profiles");
-            if(entries.length()>=20)throw new IllegalArgumentException();entries.put(new JSONObject().put("uri",uri));settings.put("selection",entries.length()-1);store.save(settings);
+            if(entries.length()>=20)throw new IllegalArgumentException();entries.put(new JSONObject().put("uri",uri));settings.put("selection",entries.length()-1).put("country","");store.save(settings);
             input.setText("");selectionChanged();client.refresh();render();dialog.dismiss();toast("Imported "+p.protocolLabel()+". Reachability is checked on connection.");
         }catch(Exception error){input.setError("Invalid or unsupported profile (maximum 20 saved profiles)");}}));dialog.show();
     }

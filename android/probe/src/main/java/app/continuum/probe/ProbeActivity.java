@@ -17,6 +17,13 @@ public final class ProbeActivity extends Activity {
     @Override public void onCreate(Bundle state){super.onCreate(state);new Thread(()->{
         String result="FAIL";
         try{
+            String mode=getIntent().getStringExtra("mode");
+            if(mode!=null){
+                boolean reached=false;HttpURLConnection direct=(HttpURLConnection)new URL("http://10.0.2.2:18780/marker").openConnection();direct.setConnectTimeout(2000);direct.setReadTimeout(2000);
+                try{reached=direct.getResponseCode()==200;}catch(IOException expected){}finally{direct.disconnect();}
+                require(mode.equals("direct")?reached:mode.equals("blocked")&&!reached,"Direct-path control did not match "+mode);
+                report.append("Separate UID direct-path ").append(mode).append(": PASS\n");
+            }else{
             check("TCP proxy-only marker",()->{require("continuum-vpn-path-ok".equals(http("http://198.18.0.42/marker")),"marker mismatch");});
             check("DNS UDP A through DoH, with server UDP/53 blocked",()->dns(false,1,true));
             check("DNS TCP A through DoH",()->dns(true,1,true));
@@ -31,6 +38,7 @@ public final class ProbeActivity extends Activity {
                 c.setConnectTimeout(15000);c.setReadTimeout(15000);
                 try{require(c.getResponseCode()==200,"HTTPS response");try(InputStream in=c.getInputStream()){require(in.read()!=-1,"empty HTTPS body");}}finally{c.disconnect();}
             });
+            }
             result="PASS";
         }catch(Exception e){report.append("FAIL: ").append(e.getClass().getSimpleName()).append(": ").append(e.getMessage());android.util.Log.e("ContinuumProbe",report.toString(),e);}
         try{save("report",report.toString());save("result",result);}catch(Exception ignored){}

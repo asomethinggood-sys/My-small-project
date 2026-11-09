@@ -73,6 +73,27 @@ public class DeviceSmokeTest {
             }
         }finally{cleanup();}
     }
+    private void directPathProbe(String mode)throws Exception{
+        shell("run-as app.continuum.probe rm -f files/result files/report");shell("am start -W -n app.continuum.probe/.ProbeActivity --es mode "+mode);
+        String result="";long deadline=SystemClock.elapsedRealtime()+15000;
+        while(SystemClock.elapsedRealtime()<deadline){result=shell("run-as app.continuum.probe cat files/result").trim();if(result.equals("PASS")||result.equals("FAIL"))break;Thread.sleep(100);}
+        assertEquals(shell("run-as app.continuum.probe cat files/report"),"PASS",result);
+    }
+    @Test public void unavailableCountryBlocksTrafficWithoutDefaultFallback()throws Exception{
+        shell("appops set app.nyx.vpn ACTIVATE_VPN allow");shell("pm grant app.nyx.vpn android.permission.POST_NOTIFICATIONS");
+        SettingsStore store=new SettingsStore(context);observer=new StateClient(context);inst.runOnMainSync(observer::begin);
+        Activity screen=null;
+        try{
+            directPathProbe("direct");
+            JSONArray fixtures=new JSONArray(shell("cat /sdcard/Download/continuum-fixtures.json"));
+            store.save(store.load().put("country","DE").put("countryService","").put("selection",0).put("profiles",new JSONArray().put(new JSONObject().put("uri",fixtures.getString(0)))));
+            screen=launch();press(screen,"Connect");
+            await("unavailable selected country blocks instead of installing valid default profile",()->observer.status.tunOpen&&!observer.status.engineRunning&&"Country unavailable".equals(observer.status.state),20);
+            assertTrue(vpn());directPathProbe("blocked");
+            screen=launch();press(screen,"Disconnect");await("explicit disconnect releases the country block",()->!observer.status.running&&!vpn(),6);
+            directPathProbe("direct");
+        }finally{store.save(store.load().put("country",""));cleanup();if(screen!=null){Activity finalScreen=screen;inst.runOnMainSync(finalScreen::finish);}}
+    }
     @Test public void disconnectDuringBlockedFetchThenReconnect()throws Exception{
         shell("appops set app.nyx.vpn ACTIVATE_VPN allow");shell("pm grant app.nyx.vpn android.permission.POST_NOTIFICATIONS");
         SettingsStore store=new SettingsStore(context);store.save(store.load().put("selection",-1).put("source","https://10.255.255.1/stalled"));

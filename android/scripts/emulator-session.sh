@@ -29,3 +29,19 @@ adb shell settings put global window_animation_scale 0
 adb shell settings put global transition_animation_scale 0
 adb shell settings put global animator_duration_scale 0
 bash android/scripts/device-smoke.sh
+# Validate the minified release variant too; debug instrumentation is not a
+# substitute for testing the final packaging. All uninstall operations are on
+# this disposable emulator, never on a user's device.
+(
+  cd android
+  gradle --no-daemon -PtargetAbi=x86_64 :app:assembleRelease
+)
+adb uninstall app.nyx.vpn
+adb install --no-streaming android/app/build/outputs/apk/release/app-release.apk
+adb shell am start -W -n app.nyx.vpn/app.continuum.MainActivity
+sleep 3
+adb shell pidof app.nyx.vpn
+adb uninstall app.nyx.vpn
+adb install --no-streaming --abi arm64-v8a android/release/nyx-0.6.0-arm64.apk > android/release/INSTALLATION.txt 2>&1
+cat android/release/INSTALLATION.txt
+echo '::notice title=Release package acceptance::Minified x86_64 release installed and launched. Exact ARM64 candidate installed with ABI override; physical ARM execution remains unverified.'

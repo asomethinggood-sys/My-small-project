@@ -19,9 +19,15 @@ pub fn motion(elapsed: i64, duration: i64, reduced: bool) -> i32 {
     let x = ((elapsed.clamp(0, duration) as f64) / duration as f64).clamp(0.0, 1.0);
     (x * x * (3.0 - 2.0 * x) * 1000.0).round() as i32
 }
+/// 0 keep, 1 renew, 2 block. Monotonic milliseconds, no wall-clock leases.
+pub fn lease_action(now: i64, deadline: i64, same_selection: bool) -> i32 {
+    if !same_selection || now < 0 || deadline <= now || deadline.saturating_sub(now) > 300_000 { return 2; }
+    if deadline - now <= 30_000 { 1 } else { 0 }
+}
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test] fn lease_boundaries() { assert_eq!(lease_action(100,30100,true),1); assert_eq!(lease_action(100,30101,true),0); assert_eq!(lease_action(100,100,true),2); assert_eq!(lease_action(100,99,true),2); assert_eq!(lease_action(100,300101,true),2); assert_eq!(lease_action(100,200,false),2); assert_eq!(lease_action(-1,200,true),2); }
     #[test] fn no_counts_without_evidence() { assert_eq!(eligibility(100,90,190,0,31),1); assert_eq!(eligibility(100,90,190,0,0),0); }
     #[test] fn all_gates_required() { for flag in [0,2,4,8,16,14,22,26,28] { assert_eq!(eligibility(100,90,190,1,flag),3); } assert_eq!(eligibility(100,90,190,1,30),4); }
     #[test] fn stale_future_and_long_lived_rejected() { for (g,e) in [(101,200),(90,100),(90,991),(0,100), (90,89)] { assert_eq!(eligibility(100,g,e,1,31),2); } }

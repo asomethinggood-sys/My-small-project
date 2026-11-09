@@ -28,6 +28,11 @@ public final class TunnelService extends VpnService {
     private ScheduledFuture<?> scheduled;
     private SettingsStore store;
     private volatile SubscriptionClient fetcher;
+    private volatile CountryClient countryFetcher;
+    private volatile CountryClient.Lease countryLease;
+    private volatile CountryClient.Source leaseSource;
+    private volatile String countryBinding="";
+    private final ExecutorService leaseCleanup=Executors.newSingleThreadExecutor();
     private volatile boolean stopping,destroyed,tunOpen,coreRunning;
     private volatile Profile active;
     private volatile VpnStatus status=VpnStatus.offline();
@@ -161,10 +166,75 @@ public final class TunnelService extends VpnService {
             }
         }).get(15,TimeUnit.SECONDS);
     }
+    private void retireCountry(){
+        CountryClient.Lease old=countryLease;CountryClient.Source source=leaseSource;
+        countryLease=null;leaseSource=null;countryBinding="";
+        retire(old,source);
+    }
+    private void retire(CountryClient.Lease lease,CountryClient.Source source){
+        if(lease==null||source==null||leaseCleanup.isShutdown())return;
+        leaseCleanup.execute(()->{try{new CountryClient(source).release(lease);}catch(Exception ignored){/* Backend enforces expiry independently. */}});
+    }
+    private void stopPayload(){
+        try{if(core!=null)core.stopLoop();}catch(Exception ignored){}
+        core=null;coreRunning=false;nativeConfig="";installedOptions="";active=null;connectedAt=0;
+        // Keep TUN open: unavailable country traffic must not escape to default.
+    }
+    private void watchLease(CountryClient.Lease lease,long token){
+        main.postDelayed(()->{
+            if(!gate.accepts(token)||countryLease!=lease)return;
+            engine.execute(()->{if(gate.accepts(token)&&countryLease==lease){stopPayload();publish(token,"Country expired","Traffic blocked; renewing country session",-1,1);}});
+            requestCheck(0);
+        },Math.max(0,lease.deadline-SystemClock.elapsedRealtime()));
+    }
+    private void checkCountry(JSONObject settings,long token)throws Exception{
+        String country=settings.getString("country");
+        String binding;
+        try{binding=CountryClient.binding(settings);}catch(Exception invalid){
+            retireCountry();engine.submit(()->{if(!gate.accepts(token))return;stopPayload();try{ensureTun(NetworkConfig.mtu(settings));}catch(Exception e){throw new IllegalStateException(e);}}).get(15,TimeUnit.SECONDS);throw invalid;
+        }
+        CountryClient.Lease old=countryLease;CountryClient.Source oldSource=leaseSource;
+        boolean same=binding.equals(countryBinding);
+        int action=old==null?2:RustCore.leaseAction(SystemClock.elapsedRealtime(),old.deadline,same);
+        if(action==2){
+            retireCountry();old=null;oldSource=null;
+            engine.submit(()->{if(!gate.accepts(token))return;stopPayload();try{ensureTun(NetworkConfig.mtu(settings));}catch(Exception e){throw new IllegalStateException(e);}}).get(15,TimeUnit.SECONDS);
+        }
+        if(!gate.accepts(token))return;
+        if(!upstreamAvailable())throw new IllegalStateException("Country control channel offline");
+        if(action!=0){
+            CountryClient.Source source=new CountryClient.Source(settings);CountryClient client=new CountryClient(source);countryFetcher=client;
+            CountryClient.Lease next;
+            try{next=client.acquire(country,SystemClock.elapsedRealtime());}finally{countryFetcher=null;}
+            boolean selected=false;try{selected=binding.equals(CountryClient.binding(store.load()));}catch(Exception ignored){}
+            if(!gate.accepts(token)||!selected||RustCore.leaseAction(SystemClock.elapsedRealtime(),next.deadline,true)==2){retire(next,source);return;}
+            try{
+                initializeNative(token);
+                Profile candidate=Profile.parse(next.uri);
+                if(!install(candidate,settings,token)){retire(next,source);return;}
+                synchronized(gate){
+                    if(!gate.accepts(token)){retire(next,source);return;}
+                    countryBinding=binding;leaseSource=source;countryLease=next;lastHealth=0;
+                    watchLease(next,token);
+                }
+                retire(old,oldSource);
+            }catch(Exception error){retire(next,source);throw error;}
+        }
+        if(!gate.accepts(token))return;
+        if(countryLease!=null&&(!coreRunning||!installedOptions.equals(NetworkConfig.identity(settings)))){
+            initializeNative(token);if(!install(Profile.parse(countryLease.uri),settings,token))return;
+        }
+        long delay=status.latency;
+        if(CheckPolicy.healthDue(SystemClock.elapsedRealtime(),lastHealth,failures>0||checkEpoch.get()!=healthyEpoch,true)||delay<0){delay=activeProbe(token);lastHealth=SystemClock.elapsedRealtime();healthyEpoch=checkEpoch.get();}
+        failures=0;publish(token,"Connected",country+" · authenticated country route",delay,15);
+    }
     private void check(long token){
         if(!gate.accepts(token)||!checking.compareAndSet(false,true))return;
         int interval=60;long epoch=checkEpoch.get(),began=SystemClock.elapsedRealtime();
         try{
+            JSONObject routeSettings=store.load();
+            if(!routeSettings.optString("country","").isEmpty()){interval=15;checkCountry(routeSettings,token);return;}
+            if(countryLease!=null||!countryBinding.isEmpty())retireCountry();
             if(!upstreamAvailable()){
                 interval=CheckPolicy.offlineSeconds();publish(token,"Waiting for network",tunOpen?"VPN routes retained; waiting for the default network":"No default network; waiting to open VPN",-1,interval);return;
             }
@@ -204,7 +274,10 @@ public final class TunnelService extends VpnService {
         }catch(Exception error){
             if(!gate.accepts(token))return;
             Diagnostics.failure(error);failures++;interval=RotationPolicy.retrySeconds(failures);
-            publish(token,coreRunning?"Checking connection":"Reconnecting",error instanceof IllegalArgumentException?"Invalid profile rejected; no update installed":"Reachability check failed; VPN retained and retry scheduled",-1,interval);
+            if(!store.load().optString("country","").isEmpty()){
+                interval=Math.min(interval,15);
+                publish(token,"Country unavailable",coreRunning?"Country renewal failed; no default fallback":"Country traffic blocked; retrying without default fallback",-1,interval);
+            }else publish(token,coreRunning?"Checking connection":"Reconnecting",error instanceof IllegalArgumentException?"Invalid profile rejected; no update installed":"Reachability check failed; VPN retained and retry scheduled",-1,interval);
         }catch(LinkageError error){main.post(()->{if(gate.accepts(token)){event("Native engine unavailable on this device");disconnect(true);}});
         }finally{
             checking.set(false);final int seconds=interval;
@@ -213,7 +286,8 @@ public final class TunnelService extends VpnService {
     }
     private void disconnect(boolean user){
         if(user){try{store.pause();}catch(Exception ignored){event("Could not save pause preference");}}
-        gate.stop();refreshPending=false;if(scheduled!=null)scheduled.cancel(true);if(stopping)return;stopping=true;
+        gate.stop();retireCountry();CountryClient route=countryFetcher;if(route!=null)new Thread(route::cancel,"cancel-country-request").start();
+        refreshPending=false;if(scheduled!=null)scheduled.cancel(true);if(stopping)return;stopping=true;
         status=new VpnStatus("Disconnecting","Closing VPN resources",status.host,status.protocol,status.transport,-1,0,0,true,tunOpen,coreRunning);broadcast();
         SubscriptionClient client=fetcher;if(client!=null)new Thread(client::cancel,"cancel-subscription").start();
         Runnable watchdog=()->{if(!stopping)return;getSystemService(NotificationManager.class).cancel(1);stopForeground(STOP_FOREGROUND_REMOVE);stopSelf();android.os.Process.killProcess(android.os.Process.myPid());};
@@ -229,7 +303,7 @@ public final class TunnelService extends VpnService {
     }
     @Override public void onRevoke(){disconnect(true);}
     @Override public void onDestroy(){
-        destroyed=true;gate.stop();if(scheduled!=null)scheduled.cancel(true);
+        destroyed=true;gate.stop();retireCountry();leaseCleanup.shutdown();CountryClient route=countryFetcher;if(route!=null)new Thread(route::cancel,"cancel-country-request").start();if(scheduled!=null)scheduled.cancel(true);
         try{connectivity.unregisterNetworkCallback(networkCallback);}catch(Exception ignored){}
         observers.clear();if(!stopping)engine.execute(this::shutdownEngine);io.shutdownNow();engine.shutdown();super.onDestroy();
     }

@@ -111,6 +111,18 @@ class GatewayTests(unittest.TestCase):
             if country:country.close()
             if default:default.close()
             origin.shutdown();origin.server_close();worker.join(2)
+    def test_authenticated_availability_tracks_failed_pool(self):
+        def fetch(key):
+            client=http.client.HTTPConnection(*self.gateway.server_address,timeout=3)
+            client.request('GET','/v1/availability',headers={'Authorization':'Bearer '+key,'X-Nyx-User':'alice'})
+            response=client.getresponse();result=response.status,json.loads(response.read());client.close();return result
+        self.assertEqual(fetch('wrong')[0],401)
+        status,body=fetch(self.key);self.assertEqual(status,200)
+        self.assertEqual(body['purpose'],'authenticated_live_availability')
+        self.assertEqual(body['countries'][0]['country'],'DE')
+        self.assertTrue(body['countries'][0]['udp'])
+        self.control.pool_failed('de')
+        self.assertEqual(fetch(self.key)[1]['countries'],[])
     def test_gateway_only_listens_on_loopback(self):
         self.assertEqual(self.gateway.server_address[0],'127.0.0.1')
         with self.assertRaises(ValueError):Gateway(self.control,'http://evil',{})
