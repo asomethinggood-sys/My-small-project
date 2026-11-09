@@ -71,7 +71,7 @@ def await_service(service, user, key, country, cancel):
     if (origin.scheme!='https' or not origin.hostname or origin.port not in (None,443)
             or origin.username or origin.password or origin.path not in ('','/') or origin.query or origin.fragment):
         raise ValueError('HTTPS root required before sending credentials')
-    for attempt in range(4):
+    for attempt in range(8):
         if cancel.is_set():raise ValueError('Probe cancelled')
         try:
             req=urllib.request.Request(service.rstrip('/')+'/v1/availability',headers={'Authorization':'Bearer '+key,'X-Nyx-User':user})
@@ -83,10 +83,12 @@ def await_service(service, user, key, country, cancel):
                     raise ValueError('Requested country unavailable')
                 return
         except urllib.error.HTTPError as error:
-            if error.code not in (404,502,503,504) or attempt==3:raise
-        except (urllib.error.URLError,OSError):
-            if attempt==3:raise
-        cancel.wait(1)
+            if error.code not in (404,502,503,504) or attempt==7:raise
+        except (urllib.error.URLError,OSError) as error:
+            reason=getattr(error,'reason',error)
+            print('::notice title=TLS readiness diagnostic::'+type(reason).__name__+'; errno='+str(getattr(reason,'errno',None)),flush=True)
+            if attempt==7:raise
+        cancel.wait(2)
 
 
 def exact(stream, size):

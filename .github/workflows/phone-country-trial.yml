@@ -5,6 +5,7 @@ on:
     paths:
       - .github/workflows/phone-country-trial.yml
       - scripts/egress_phone_trial.py
+      - scripts/egress_path_probe.py
       - config/trial-recipient.pub
 permissions:
   contents: write
