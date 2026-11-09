@@ -132,6 +132,20 @@ def main():
             report.update(inspect_bundle(fetch(links[0])))
         else:
             report['status'] = 'no_supported_german_bundle_link'
+            # Inspect bounded public frontend code for documented-page download
+            # routes; do not call discovered APIs or execute JavaScript.
+            routes = set()
+            budget = 4 * 1024 * 1024
+            for path in sorted(page.routes)[:12]:
+                if not path.endswith('.js') or not path.startswith('/_next/static/'):
+                    continue
+                code = fetch('https://www.vpnbook.com' + path)
+                budget -= len(code)
+                if budget < 0:
+                    break
+                text = code.decode('utf-8', errors='replace')
+                routes.update(re.findall(r'/api/[A-Za-z0-9_/-]{1,100}', text))
+            report['frontend_api_routes'] = sorted(routes)[:20]
     except (OSError, ValueError, zipfile.BadZipFile):
         report['status'] = 'source_or_validation_error'
     destination = Path('.runtime/egress/vpnbook-inspection.json')
@@ -142,6 +156,8 @@ def main():
           + '; German bundle links=' + str(report.get('german_bundle_links', 0)))
     if 'reason' in report:
         print('::notice title=Nyx VPNBook policy::' + report['reason'])
+    for route in report.get('frontend_api_routes', []):
+        print('::notice title=Nyx VPNBook frontend API route::' + route)
     for route in report.get('download_page_routes', []):
         print('::notice title=Nyx VPNBook route::' + route)
 
