@@ -115,6 +115,8 @@ jobs:
   sources:
     runs-on: ubuntu-24.04
     timeout-minutes: 5
+    permissions:
+      contents: write
     steps:
       - uses: actions/checkout@v4
       - name: Fetch bounded official-provider metadata
@@ -137,6 +139,23 @@ jobs:
             .runtime/egress/catalog.json
             .runtime/egress/sources.json
             .runtime/egress/vpnbook-inspection.json
+      - name: Publish public metadata only for Nyx Locations
+        if: github.ref == 'refs/heads/arena/f056ce38-my-small-project' && steps.directory.outcome == 'success'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          python3 - <<'PY'
+          import json
+          from pathlib import Path
+          c=json.loads(Path('.runtime/egress/catalog.json').read_text())
+          assert c['purpose']=='research_metadata_not_connection_profiles'
+          assert c['routing_implemented'] is False
+          assert all(r['selectable'] is False and r['verified_servers']==0 for r in c['countries'])
+          PY
+          if ! gh release view nyx-research-catalog >/dev/null 2>&1; then
+            gh release create nyx-research-catalog --target "$GITHUB_SHA" --prerelease --title 'Nyx discovery metadata · not VPN profiles' --notes 'Public discovery snapshot, expires after 15 minutes. No selectable country exits or credentials. The default VPN release is unchanged.'
+          fi
+          gh release upload nyx-research-catalog .runtime/egress/catalog.json --clobber
       - name: Preserve discovery failure in job status
         if: steps.directory.outcome == 'failure'
         run: exit 1
