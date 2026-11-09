@@ -1,4 +1,4 @@
-name: Android client
+name: Nyx Android client
 on:
   push:
     paths: [android/**, .github/workflows/android.yml]
@@ -47,12 +47,12 @@ jobs:
         run: |
           gradle --no-daemon -PtargetAbi=arm64-v8a :app:assembleRelease :app:lintRelease
           mkdir -p release
-          cp app/build/outputs/apk/release/app-release.apk release/continuum-0.4.0-arm64.apk
-          "$ANDROID_HOME/build-tools/35.0.0/apksigner" verify --print-certs release/continuum-0.4.0-arm64.apk > release/SIGNING-CERTIFICATE.txt
+          cp app/build/outputs/apk/release/app-release.apk release/nyx-0.5.0-arm64.apk
+          "$ANDROID_HOME/build-tools/35.0.0/apksigner" verify --print-certs release/nyx-0.5.0-arm64.apk > release/SIGNING-CERTIFICATE.txt
           python3 - <<'PY'
           from pathlib import Path
           import zipfile, hashlib, os
-          p=Path('release/continuum-0.4.0-arm64.apk')
+          p=Path('release/nyx-0.5.0-arm64.apk')
           with zipfile.ZipFile(p) as z:
               native=[n for n in z.namelist() if n.startswith('lib/') and n.endswith('.so')]
               assert 'lib/arm64-v8a/libcontinuum_core.so' in native
@@ -86,7 +86,7 @@ jobs:
           bash android/scripts/emulator-session.sh 2>&1 | tee android/emulator-boot.log
       - name: Corresponding source and licenses
         run: |
-          git archive --format=tar.gz --output=android/release/continuum-source.tar.gz HEAD android
+          git archive --format=tar.gz --output=android/release/nyx-source.tar.gz HEAD android
           cp android/THIRD_PARTY.md android/LICENSE* android/release/
           cp android/third-party/libv2ray-sources.jar android/release/
           cp android/network-report.txt android/release/
@@ -95,8 +95,8 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          tag="continuum-0.4.0-preview-${GITHUB_RUN_NUMBER}"
-          gh release create "$tag" android/release/* --target "$GITHUB_SHA" --prerelease --title "Continuum 0.4 · Rust migration stage 1 · build ${GITHUB_RUN_NUMBER}" --notes "Android 8+ ARM64. Rust scheduling, cancellation-token, backoff and diagnostic policy through JNI; conditional subscriptions; default-network monitoring; local redacted reports. This is NOT a completed Rust migration: Java profile/config parsing and Android orchestration remain; Xray remains Go by design. Stable signing requires privately provisioned Actions secrets; APK-SIZE.txt states the actual mode. Existing previews may require uninstall. Rust/JVM tests and real API35 x86_64 TUN regressions pass; physical ARM, real mobile handoff, battery and latency improvements remain unverified."
+          tag="nyx-0.5.0-preview-${GITHUB_RUN_NUMBER}"
+          gh release create "$tag" android/release/* --target "$GITHUB_SHA" --prerelease --title "Nyx VPN 0.5 · build ${GITHUB_RUN_NUMBER}" --notes "Android 8+ ARM64. Separate app.nyx.vpn package: does not replace Continuum. Default project subscription unchanged. Custom night interface, reduced-motion-aware connection animations, searchable 30-country discovery and provider/capability details. Locations are metadata only: ZERO selectable country exits; no public shared-use provider pool is approved. Rust JNI handles scheduling, cancellation, backoff, catalog eligibility and presentation policy; Android UI/orchestration remain Java and Xray remains Go. NOT an all-Rust tunnel engine or completed multi-provider deployment. Stable signing requires privately provisioned Actions secrets; APK-SIZE.txt states the actual mode. Rust/JVM/UI tests and real API35 x86_64 TUN regressions pass before publication. Physical ARM, mobile handoff, long-duration stability and Tehran latency remain unverified."
       - name: Failure diagnostics
         if: failure()
         run: python3 android/scripts/ci-diagnostics.py

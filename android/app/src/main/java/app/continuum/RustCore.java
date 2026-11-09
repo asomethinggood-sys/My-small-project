@@ -16,4 +16,7 @@ public final class RustCore {
     public static native void addMetric(int index,long value);
     public static native long metric(int index);
     public static native int classify(int evidenceMask);
+    public static native int exitEligibility(long now,long generated,long expires,int verified,int flags);
+    public static native int connectionPhase(boolean running,boolean tun,boolean engine,boolean verified,boolean stopping);
+    public static native int motionProgress(long elapsed,long duration,boolean reducedMotion);
 }

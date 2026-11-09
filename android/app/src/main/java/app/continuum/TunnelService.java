@@ -82,7 +82,7 @@ public final class TunnelService extends VpnService {
     private Notification notification(String text){
         PendingIntent open=PendingIntent.getActivity(this,0,new Intent(this,MainActivity.class),PendingIntent.FLAG_IMMUTABLE);
         PendingIntent stop=PendingIntent.getService(this,1,new Intent(this,TunnelService.class).setAction(STOP),PendingIntent.FLAG_IMMUTABLE);
-        return new Notification.Builder(this,"connection").setSmallIcon(R.drawable.ic_notification).setContentTitle("Continuum")
+        return new Notification.Builder(this,"connection").setSmallIcon(R.drawable.ic_notification).setContentTitle("Nyx VPN")
             .setContentText(text).setContentIntent(open).setOngoing(true).setOnlyAlertOnce(true)
             .addAction(new Notification.Action.Builder(null,"Disconnect",stop).build()).build();
     }
@@ -135,7 +135,7 @@ public final class TunnelService extends VpnService {
     }
     private void ensureTun(int mtu)throws Exception{
         if(tun!=null&&tunMtu==mtu)return;
-        ParcelFileDescriptor next=new Builder().setSession("Continuum").setMtu(mtu)
+        ParcelFileDescriptor next=new Builder().setSession("Nyx VPN").setMtu(mtu)
             .addAddress("172.30.0.2",30).addRoute("0.0.0.0",0).addAddress("fd66:6f6e:7469::2",126).addRoute("::",0)
             .addDnsServer(NetworkConfig.DNS_ADDRESS).addDisallowedApplication(getPackageName()).setBlocking(false).establish();
         if(next==null)throw new IllegalStateException("VPN consent required");

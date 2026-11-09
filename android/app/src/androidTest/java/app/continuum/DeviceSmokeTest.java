@@ -29,7 +29,7 @@ public class DeviceSmokeTest {
         while(!condition.getAsBoolean()&&SystemClock.elapsedRealtime()<deadline)Thread.sleep(100);
         if(!condition.getAsBoolean()){
             VpnStatus s=observer==null?VpnStatus.offline():observer.status;
-            fail(description+"; state="+s.state+" running="+s.running+" tun="+s.tunOpen+" engine="+s.engineRunning+" androidVpn="+vpn()+"\n"+(observer==null?"":observer.history)+"\n"+shell("dumpsys activity services app.continuum"));
+            fail(description+"; state="+s.state+" running="+s.running+" tun="+s.tunOpen+" engine="+s.engineRunning+" androidVpn="+vpn()+"\n"+(observer==null?"":observer.history)+"\n"+shell("dumpsys activity services "+context.getPackageName()));
         }
     }
     private boolean vpn(){
@@ -48,7 +48,7 @@ public class DeviceSmokeTest {
         inst.runOnMainSync(observer::end);
     }
     @Test public void realTunDnsWebsitesLargeTransfersUdpAndDisconnect()throws Exception{
-        shell("appops set app.continuum ACTIVATE_VPN allow");shell("pm grant app.continuum android.permission.POST_NOTIFICATIONS");
+        shell("appops set app.nyx.vpn ACTIVATE_VPN allow");shell("pm grant app.nyx.vpn android.permission.POST_NOTIFICATIONS");
         JSONArray profiles=new JSONArray(shell("cat /sdcard/Download/continuum-fixtures.json"));
         SettingsStore store=new SettingsStore(context);observer=new StateClient(context);inst.runOnMainSync(observer::begin);
         try{
@@ -74,7 +74,7 @@ public class DeviceSmokeTest {
         }finally{cleanup();}
     }
     @Test public void disconnectDuringBlockedFetchThenReconnect()throws Exception{
-        shell("appops set app.continuum ACTIVATE_VPN allow");shell("pm grant app.continuum android.permission.POST_NOTIFICATIONS");
+        shell("appops set app.nyx.vpn ACTIVATE_VPN allow");shell("pm grant app.nyx.vpn android.permission.POST_NOTIFICATIONS");
         SettingsStore store=new SettingsStore(context);store.save(store.load().put("selection",-1).put("source","https://10.255.255.1/stalled"));
         observer=new StateClient(context);inst.runOnMainSync(observer::begin);Activity screen=launch();
         try{

@@ -1,5 +1,6 @@
 //! Dependency-free policy and counters. JNI takes primitives only; no retained
 //! pointers, dereferenced Java objects, or panics cross the JNI boundary.
+mod nyx;
 use std::ffi::c_void;
 use std::sync::atomic::{AtomicI64, Ordering};
 static METRICS: [AtomicI64; 4] = [AtomicI64::new(0),AtomicI64::new(0),AtomicI64::new(0),AtomicI64::new(0)];
@@ -53,6 +54,12 @@ pub extern "system" fn Java_app_continuum_RustCore_addMetric(_:Env,_:Class,i:i32
 pub extern "system" fn Java_app_continuum_RustCore_metric(_:Env,_:Class,i:i32)->i64 {metric(i)}
 #[no_mangle]
 pub extern "system" fn Java_app_continuum_RustCore_classify(_:Env,_:Class,m:i32)->i32 {classify(m)}
+#[no_mangle]
+pub extern "system" fn Java_app_continuum_RustCore_exitEligibility(_:Env,_:Class,n:i64,g:i64,e:i64,v:i32,f:i32)->i32 {nyx::eligibility(n,g,e,v,f)}
+#[no_mangle]
+pub extern "system" fn Java_app_continuum_RustCore_connectionPhase(_:Env,_:Class,r:u8,t:u8,e:u8,v:u8,s:u8)->i32 {nyx::phase(r!=0,t!=0,e!=0,v!=0,s!=0)}
+#[no_mangle]
+pub extern "system" fn Java_app_continuum_RustCore_motionProgress(_:Env,_:Class,e:i64,d:i64,r:u8)->i32 {nyx::motion(e,d,r!=0)}
 #[cfg(test)]
 mod tests {
     use super::*;
