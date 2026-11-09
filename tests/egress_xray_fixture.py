@@ -59,7 +59,10 @@ def test_xray(binary, pool, control, peer):
     with tempfile.TemporaryDirectory(prefix='nyx-xray-') as directory:
         try:
             server, client = configurations(pool.payload_ip, str(uuid.uuid4()), '/' + uuid.uuid4().hex)
-            for name, config in [('server', server), ('client', client)]:
+            unauthorized = json.loads(json.dumps(client))
+            unauthorized['inbounds'][0]['port'] = 10810
+            unauthorized['outbounds'][0]['settings']['vnext'][0]['users'][0]['id'] = str(uuid.uuid4())
+            for name, config in [('server', server), ('client', client), ('unauthorized', unauthorized)]:
                 path = Path(directory) / (name + '.json')
                 path.write_text(json.dumps(config))
                 path.chmod(0o600)
@@ -68,7 +71,8 @@ def test_xray(binary, pool, control, peer):
             for ns, command in [
                     (peer, [sys.executable, '-c', HTTP]),
                     (pool.namespace, [binary, 'run', '-c', str(Path(directory) / 'server.json')]),
-                    (control, [binary, 'run', '-c', str(Path(directory) / 'client.json')])]:
+                    (control, [binary, 'run', '-c', str(Path(directory) / 'client.json')]),
+                    (control, [binary, 'run', '-c', str(Path(directory) / 'unauthorized.json')])]:
                 processes.append(subprocess.Popen(['ip', 'netns', 'exec', ns, *command],
                                                    stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL))
             run(peer, sys.executable, '-c', WAIT, '1.1.1.1', '18082')
@@ -79,6 +83,12 @@ def test_xray(binary, pool, control, peer):
             assert response.stdout == 'nyx-encrypted-path'
             response = run(control, sys.executable, '-c', UDP_PROBE)
             assert response.stdout.strip() == 'udp-vless-wireguard-ok'
+            run(control, sys.executable, '-c', WAIT, '127.0.0.1', '10810')
+            unauthorized = subprocess.run(['ip', 'netns', 'exec', control, 'curl', '--fail', '--silent',
+                                           '--max-time', '2', '--noproxy', '', '--proxy',
+                                           'socks5h://127.0.0.1:10810', 'http://1.1.1.1:18082/'],
+                                          capture_output=True, timeout=5)
+            assert unauthorized.returncode != 0
             # With the interface down, existing ingress still cannot escape directly.
             run(pool.namespace, 'ip', 'link', 'set', 'nyx-vpn', 'down')
             failed = subprocess.run(['ip', 'netns', 'exec', control, 'curl', '--fail', '--silent',
@@ -91,6 +101,7 @@ def test_xray(binary, pool, control, peer):
                            '--noproxy', '', '--proxy', 'socks5h://127.0.0.1:10809', 'http://1.1.1.1:18082/')
             assert response.stdout == 'nyx-encrypted-path'
             return ['Xray VLESS/WS carries TCP and UDP through real local WireGuard',
+                    'Incorrect VLESS identity cannot access the pool',
                     'Tunnel-down blocks Xray requests; new requests recover after tunnel-up']
         finally:
             for process in reversed(processes):

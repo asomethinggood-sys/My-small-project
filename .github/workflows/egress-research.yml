@@ -6,6 +6,7 @@ on:
       - .github/workflows/egress-research.yml
       - scripts/egress*.py
       - scripts/build-wireguard-tools.sh
+      - scripts/egress*.mjs
       - tests/egress*.py
       - tests/test_egress*.py
       - config/egress*.json
@@ -16,6 +17,23 @@ concurrency:
   group: nyx-egress-research-${{ github.ref }}
   cancel-in-progress: false
 jobs:
+  browser-acquisition:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install pinned browser automation
+        run: |
+          npm install --prefix .runtime/browser --no-audit --no-fund playwright@1.56.1
+          .runtime/browser/node_modules/.bin/playwright install --with-deps chromium
+      - name: Probe official German download control (no challenge solving)
+        run: timeout 90s node scripts/egress_vpnbook_browser.mjs
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: nyx-browser-${{ github.run_id }}
+          retention-days: 3
+          path: .runtime/egress/vpnbook-browser.json
   kernel:
     runs-on: ubuntu-24.04
     timeout-minutes: 15
