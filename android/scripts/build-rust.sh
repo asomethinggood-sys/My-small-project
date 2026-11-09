@@ -6,6 +6,14 @@ version=1.85.1
 if ! rustup run "$version" rustc --version >/dev/null 2>&1; then
   rustup toolchain install "$version" --profile minimal
 fi
+# Ship upstream runtime notices alongside the APK; no private material here.
+mkdir -p release
+for name in LICENSE-MIT LICENSE-APACHE COPYRIGHT; do
+  dest="release/LICENSE.rust-$name"
+  if [[ ! -s "$dest" ]]; then
+    curl -fL --retry 3 --max-time 60 "https://raw.githubusercontent.com/rust-lang/rust/$version/$name" -o "$dest"
+  fi
+done
 cargo +"$version" test --locked --manifest-path rust-core/Cargo.toml
 cargo +"$version" build --locked --release --manifest-path rust-core/Cargo.toml
 sdk="${ANDROID_HOME:-${ANDROID_SDK_ROOT:-}}"

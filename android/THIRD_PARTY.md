@@ -1,27 +1,24 @@
 # Source and licensing
 
-The original Continuum app source in this directory is distributed under GPL-3.0
-(see LICENSE). The app is not a rebranded v2rayNG build; it uses a separately
-packaged Xray engine and Android's VpnService/TUN facilities.
+Continuum's original Java application and Rust core are GPL-3.0 (LICENSE). The app is not a rebranded v2rayNG build.
 
-Native engine: 2dust/AndroidLibXrayLite, tag **v26.10.31**, LGPL-3.0.
-- Source: https://github.com/2dust/AndroidLibXrayLite/tree/v26.10.31
-- Exact binary: https://github.com/2dust/AndroidLibXrayLite/releases/tag/v26.10.31
-- Build instructions: upstream README and workflows at that tag.
-- License: LICENSE.libv2ray; preserve these notices when redistributing.
-- Its Go dependency versions and source locations are specified in that tag's
-  go.mod/go.sum, including XTLS/Xray-core (MPL-2.0) and its dependencies.
-  Xray source/license: https://github.com/XTLS/Xray-core
+## Xray engine (unchanged Go dependency)
 
-The AAR is unmodified and checked by SHA-256 before building. The accompanying
-Java binding sources JAR is included in the APK download artifact; it is **not**
-the complete Go source. Complete native source and build instructions are at the
-pinned upstream tag above. Rebuild/replace `app/libs/libv2ray.aar` and rebuild the
-open app to relink a modified library. No anti-tampering restriction is imposed.
-For downstream binary distribution, preserve/provide complete corresponding
-source and dependencies as required by their licenses, not just the Java JAR.
+AndroidLibXrayLite **v26.10.31**, LGPL-3.0:
+- Source/build instructions: https://github.com/2dust/AndroidLibXrayLite/tree/v26.10.31
+- Binary: https://github.com/2dust/AndroidLibXrayLite/releases/tag/v26.10.31
+- License: LICENSE.libv2ray.
+- Go dependency versions/source locations: upstream go.mod/go.sum at that tag, including XTLS/Xray-core (MPL-2.0): https://github.com/XTLS/Xray-core
 
-Build tools: Android Gradle Plugin/SDK, Gradle, desugar_jdk_libs. Test-only:
-JUnit 4.13.2, org.json 20240303. No ads, analytics, tracking SDK or proprietary
-VPN engine is embedded. Source acknowledgements: v2rayNG and AndroidLibXrayLite
-provide upstream API examples for Android core initialization and TUN handling.
+The unmodified AAR is SHA256-checked. The release's Java binding sources JAR is **not** the complete Go source. Complete native source/dependency/build references are above. Rebuild/replace app/libs/libv2ray.aar and rebuild the open app to relink modifications; no anti-tampering restriction is imposed. Downstream distributors must preserve/provide corresponding sources and dependencies required by each license, not merely the Java binding JAR.
+
+## Rust stage-one core
+
+Owned source: rust-core/. This crate currently has no third-party Cargo dependencies; Cargo.lock is checked in. Toolchain/runtime: Rust **1.85.1**, principally MIT OR Apache-2.0, with exceptions/third-party components described by upstream COPYRIGHT.
+
+- Runtime/source/notices: https://github.com/rust-lang/rust/tree/1.85.1
+- Exact build script: scripts/build-rust.sh; Android NDK 27.2.12479018.
+- The build copies upstream LICENSE-MIT, LICENSE-APACHE and full COPYRIGHT into release assets as LICENSE.rust-* files.
+- Xray is still Go; shipping a Rust .so does not make this an all-Rust application.
+
+Build tools include Android SDK/AGP, Gradle, desugar_jdk_libs and Rust/NDK. Test-only dependencies include JUnit and org.json. No ads, analytics or tracking SDK is embedded. Upstream v2rayNG/AndroidLibXrayLite examples informed native initialization and Android TUN integration, not an application/UI fork.
