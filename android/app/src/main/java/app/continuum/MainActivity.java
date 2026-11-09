@@ -8,7 +8,6 @@ import android.graphics.*;
 import android.graphics.drawable.GradientDrawable;
 import android.net.VpnService;
 import android.os.*;
-import android.provider.Settings;
 import android.view.*;
 import android.widget.*;
 import org.json.*;
@@ -21,6 +20,7 @@ public final class MainActivity extends Activity {
     private Orbit orbit;
     private StateClient client;
     private SettingsStore store;
+    private Profile selected;
     private final Runnable update=new Runnable(){public void run(){render();handler.postDelayed(this,1000);}};
     @Override public void onCreate(Bundle saved){
         super.onCreate(saved);client=new StateClient(this);store=new SettingsStore(this);
@@ -29,7 +29,7 @@ public final class MainActivity extends Activity {
         LinearLayout root=column();root.setPadding(dp(26),dp(22),dp(26),dp(28));scroll.addView(root);setContentView(scroll);
         root.setOnApplyWindowInsetsListener((v,insets)->{root.setPadding(dp(26),dp(16)+insets.getSystemWindowInsetTop(),dp(26),dp(20)+insets.getSystemWindowInsetBottom());return insets.consumeSystemWindowInsets();});
         LinearLayout top=row();TextView brand=text("continuum",30,INK);brand.setTypeface(Typeface.create("sans-serif-medium",Typeface.NORMAL));
-        top.addView(brand,new LinearLayout.LayoutParams(0,-2,1));TextView settings=text("Settings",14,GREEN);settings.setPadding(dp(12),dp(12),0,dp(12));settings.setOnClickListener(v->settings());top.addView(settings);root.addView(top);
+        top.addView(brand,new LinearLayout.LayoutParams(0,-2,1));TextView settings=text("Settings",14,GREEN);settings.setPadding(dp(12),dp(12),0,dp(12));settings.setOnClickListener(v->ConnectionSettingsDialog.show(this,store,client));top.addView(settings);root.addView(top);
         add(root,text("YOUR CONNECTION. YOUR CONTROL.",10,MUTED),8,16);
         LinearLayout hero=column();hero.setGravity(Gravity.CENTER_HORIZONTAL);orbit=new Orbit();hero.addView(orbit,new LinearLayout.LayoutParams(dp(170),dp(170)));
         state=text("Offline",34,INK);state.setTypeface(Typeface.create("sans-serif-medium",Typeface.NORMAL));hero.addView(state);
@@ -50,24 +50,24 @@ public final class MainActivity extends Activity {
     private void render(){
         VpnStatus s=client.status;state.setText(s.state);detail.setText(s.detail);endpoint.setText(s.host);latency.setText(s.latency<0?"—":s.latency+" ms");
         boolean stopping="Disconnecting".equals(s.state);connect.setText(stopping?"Disconnecting…":s.running?"Disconnect":"Connect");connect.setEnabled(!stopping);connect.setAlpha(stopping?.6f:1f);
-        Profile selected=selectedProfile();protocolName.setText(s.running?s.protocol:selected==null?"VLESS":selected.protocolLabel());transportName.setText((s.running?s.transport:selected==null?"WebSocket · TLS":selected.transportLabel())+"  ›");
+        protocolName.setText(s.running?s.protocol:selected==null?"VLESS":selected.protocolLabel());transportName.setText((s.running?s.transport:selected==null?"WebSocket · TLS":selected.transportLabel())+"  ›");
         long duration=s.connectedAt==0?0:(SystemClock.elapsedRealtime()-s.connectedAt)/1000;
         session.setText(s.connectedAt==0?"—":String.format(Locale.US,"%02d:%02d:%02d",duration/3600,(duration/60)%60,duration%60));
         countdown.setText(s.running?"Next check in "+Math.max(0,(s.nextCheck-SystemClock.elapsedRealtime())/1000)+"s":"Updates while connected");
-        orbit.connected="Connected".equals(s.state);orbit.busy=s.running&&!orbit.connected;orbit.invalidate();
+        boolean connected="Connected".equals(s.state),busy=s.running&&!connected;
+        if(orbit.connected!=connected||orbit.busy!=busy){orbit.connected=connected;orbit.busy=busy;orbit.invalidate();}
     }
-    private Profile selectedProfile(){try{String manual=SettingsStore.manual(store.load());return manual==null?null:Profile.parse(manual);}catch(Exception e){return null;}}
+    private void selectionChanged(){try{String manual=SettingsStore.manual(store.load());selected=manual==null?null:Profile.parse(manual);}catch(Exception ignored){selected=null;}}
     private void toggle(){
-        if(client.status.running){client.disconnect();toast("Disconnect requested. Disable Android lockdown if it blocks Internet while paused.");return;}
+        if(client.status.running){client.disconnect();render();toast("Disconnect requested. Disable Android lockdown if it blocks Internet while paused.");return;}
         Intent consent=VpnService.prepare(this);if(consent!=null)startActivityForResult(consent,10);else startVpn();
     }
     private void startVpn(){
         client.connect();render();
-        if(Build.VERSION.SDK_INT>=33&&checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS)!=PackageManager.PERMISSION_GRANTED)
-            requestPermissions(new String[]{Manifest.permission.POST_NOTIFICATIONS},20);
+        if(Build.VERSION.SDK_INT>=33&&checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS)!=PackageManager.PERMISSION_GRANTED)requestPermissions(new String[]{Manifest.permission.POST_NOTIFICATIONS},20);
     }
     @Override protected void onActivityResult(int request,int result,Intent data){super.onActivityResult(request,result,data);if(request==10&&result==RESULT_OK)startVpn();}
-    @Override protected void onResume(){super.onResume();client.begin();handler.post(update);}
+    @Override protected void onResume(){super.onResume();selectionChanged();client.begin();handler.post(update);}
     @Override protected void onPause(){handler.removeCallbacks(update);client.end();super.onPause();}
     private void profiles(){
         try{
@@ -75,10 +75,8 @@ public final class MainActivity extends Activity {
             for(int i=0;i<saved.length();i++){Profile p=Profile.parse(saved.getJSONObject(i).getString("uri"));names[i+1]=p.label+" · "+p.protocolLabel()+" / "+p.transportLabel();}
             new AlertDialog.Builder(this).setTitle("Connection profiles")
                 .setSingleChoiceItems(names,settings.optInt("selection",-1)+1,(dialog,index)->{
-                    try{settings.put("selection",index-1);store.save(settings);client.refresh();render();dialog.dismiss();}
-                    catch(Exception e){toast("Could not save the selected profile");}
-                }).setPositiveButton("Import profile",(d,w)->importProfile()).setNeutralButton("How protocols work",(d,w)->protocolInfo())
-                .setNegativeButton("Close",null).show();
+                    try{settings.put("selection",index-1);store.save(settings);selectionChanged();client.refresh();render();dialog.dismiss();}catch(Exception e){toast("Could not save the selected profile");}
+                }).setPositiveButton("Import profile",(d,w)->importProfile()).setNeutralButton("How protocols work",(d,w)->protocolInfo()).setNegativeButton("Close",null).show();
         }catch(Exception e){toast("Could not load profiles");}
     }
     private void protocolInfo(){new AlertDialog.Builder(this).setTitle("Protocol ≠ transport ≠ encryption")
@@ -92,19 +90,8 @@ public final class MainActivity extends Activity {
         dialog.setOnShowListener(d->dialog.getButton(AlertDialog.BUTTON_POSITIVE).setOnClickListener(v->{try{
             String uri=Profile.single(input.getText().toString());Profile p=Profile.parse(uri);JSONObject settings=store.load();JSONArray entries=settings.getJSONArray("profiles");
             if(entries.length()>=20)throw new IllegalArgumentException();entries.put(new JSONObject().put("uri",uri));settings.put("selection",entries.length()-1);store.save(settings);
-            input.setText("");client.refresh();render();dialog.dismiss();toast("Imported "+p.protocolLabel()+". Endpoint verification happens on connection.");
+            input.setText("");selectionChanged();client.refresh();render();dialog.dismiss();toast("Imported "+p.protocolLabel()+". Reachability is checked on connection.");
         }catch(Exception error){input.setError("Invalid or unsupported profile (maximum 20 saved profiles)");}}));dialog.show();
-    }
-    private void settings(){
-        JSONObject saved=store.load();LinearLayout fields=column();fields.setPadding(dp(24),dp(6),dp(24),0);fields.addView(text("AUTOMATIC SUBSCRIPTION · HTTPS",10,MUTED));
-        EditText source=new EditText(this);source.setText(saved.optString("source",SubscriptionClient.DEFAULT));source.setTextSize(13);source.setInputType(android.text.InputType.TYPE_CLASS_TEXT|android.text.InputType.TYPE_TEXT_VARIATION_URI);fields.addView(source);
-        add(fields,text("REFRESH INTERVAL",10,MUTED),20,8);Spinner interval=new Spinner(this);interval.setAdapter(new ArrayAdapter<>(this,android.R.layout.simple_spinner_dropdown_item,new String[]{"30 seconds · faster discovery","60 seconds · balanced","120 seconds · fewer requests"}));int seconds=saved.optInt("interval",60);interval.setSelection(seconds==30?0:seconds==120?2:1);fields.addView(interval);
-        add(fields,text("Healthy, unchanged profiles get a network health check every five minutes, not on every refresh. Manual imports do not rotate with the project subscription.",12,MUTED),16,0);
-        AlertDialog dialog=new AlertDialog.Builder(this).setTitle("Settings · 0.2").setView(fields).setPositiveButton("Save",null).setNegativeButton("Cancel",null)
-            .setNeutralButton("Android VPN settings",(d,w)->{try{startActivity(new Intent(Settings.ACTION_VPN_SETTINGS));}catch(Exception e){toast("Open Android Settings → VPN");}}).create();
-        dialog.setOnShowListener(d->dialog.getButton(AlertDialog.BUTTON_POSITIVE).setOnClickListener(v->{try{
-            saved.put("source",SubscriptionClient.validate(source.getText().toString())).put("interval",new int[]{30,60,120}[interval.getSelectedItemPosition()]);store.save(saved);client.refresh();dialog.dismiss();
-        }catch(Exception e){source.setError("Enter a valid HTTPS subscription URL");}}));dialog.show();
     }
     private void toast(String text){Toast.makeText(this,text,Toast.LENGTH_LONG).show();}
     private LinearLayout row(){LinearLayout v=new LinearLayout(this);v.setGravity(Gravity.CENTER_VERTICAL);return v;}

@@ -39,21 +39,21 @@ jobs:
         run: |
           gradle --no-daemon -PtargetAbi=arm64-v8a :app:assembleRelease :app:lintRelease
           mkdir -p release
-          cp app/build/outputs/apk/release/app-release.apk release/continuum-0.2.0-arm64.apk
+          cp app/build/outputs/apk/release/app-release.apk release/continuum-0.3.0-arm64.apk
           python3 - <<'PY'
           from pathlib import Path
           import zipfile, hashlib
-          p=Path('release/continuum-0.2.0-arm64.apk')
+          p=Path('release/continuum-0.3.0-arm64.apk')
           with zipfile.ZipFile(p) as z:
               native=[n for n in z.namelist() if n.startswith('lib/') and n.endswith('.so')]
               assert native and all(n.startswith('lib/arm64-v8a/') for n in native),native
               assert all(z.getinfo(n).compress_type==zipfile.ZIP_DEFLATED for n in native)
           size=p.stat().st_size
           text=f'ARM64 APK: {size:,} bytes ({size/1000000:.2f} MB; {size/1048576:.2f} MiB).\nSHA256: {hashlib.sha256(p.read_bytes()).hexdigest()}\n'
-          print(text)
+          print('::notice title=APK size::'+text.replace('\n','%0A'))
           Path('release/APK-SIZE.txt').write_text(text)
           PY
-      - name: Temporary protocol fixtures (never production configuration)
+      - name: Temporary protocol and website compatibility fixtures
         run: |
           python3 -u android/scripts/vpn-fixture.py > "$RUNNER_TEMP/fixture.log" 2>&1 &
           fixture_pid=$!
@@ -69,7 +69,7 @@ jobs:
           echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' | sudo tee /etc/udev/rules.d/99-kvm4all.rules
           sudo udevadm control --reload-rules
           sudo udevadm trigger --name-match=kvm
-      - name: Real Android TUN traffic, all protocols, bound-service disconnect and cancelled-fetch reconnect
+      - name: Real TUN DNS, HTTP, HTTPS, uploads, downloads, UDP and disconnect tests
         run: |
           set -o pipefail
           bash android/scripts/emulator-session.sh 2>&1 | tee android/emulator-boot.log
@@ -78,14 +78,18 @@ jobs:
           git archive --format=tar.gz --output=android/release/continuum-source.tar.gz HEAD android
           cp android/THIRD_PARTY.md android/LICENSE* android/release/
           cp android/third-party/libv2ray-sources.jar android/release/
-      - name: Upload full APK as a public prerelease asset (not an artifact ZIP)
+          cp android/network-report.txt android/release/
+      - name: Upload complete APK only after successful tests
         if: github.event_name != 'pull_request' && github.ref == 'refs/heads/arena/f056ce38-my-small-project'
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          tag="continuum-0.2.0-preview-${GITHUB_RUN_NUMBER}"
-          gh release create "$tag" android/release/* --target "$GITHUB_SHA" --prerelease --title "Continuum 0.2 preview · ARM64 · build ${GITHUB_RUN_NUMBER}" --notes "Standalone Android 8+ ARM64 APK. Explicit disconnect, isolated VPN process and additional imported protocols. Automated tests cover a separate app UID through Android TUN on API 35 x86_64; this is not physical ARM/Tehran or 24-hour validation. Preview certificate: uninstall previous builds if signature differs (removes saved settings). APK size and SHA256 are in APK-SIZE.txt. Installed footprint is larger than compressed download. Source and license references attached."
-      - name: Reports and size measurements
+          tag="continuum-0.3.0-preview-${GITHUB_RUN_NUMBER}"
+          gh release create "$tag" android/release/* --target "$GITHUB_SHA" --prerelease --title "Continuum 0.3 preview · ARM64 · build ${GITHUB_RUN_NUMBER}" --notes "Android 8+ ARM64. Proxied cached DoH, IPv4-answer compatibility default, HTTP/TLS hostname recovery, MTU settings and reduced idle checks. Real TUN tests cover DNS with server port 53 blocked, four protocols, website HTTPS, Host recovery, large upload/download, UDP and disconnect on API 35 x86_64. No physical ARM/Tehran latency, battery savings or long-duration claim. See network-report.txt for runner-only timings. Preview signer: previous builds may need uninstall, deleting settings. APK size/hash, exact application source and license references attached. Production subscription unchanged."
+      - name: Failure diagnostics
+        if: failure()
+        run: python3 android/scripts/ci-diagnostics.py
+      - name: Reports and measurements
         if: always()
         uses: actions/upload-artifact@v4
         with:
@@ -99,5 +103,6 @@ jobs:
             android/emulator-boot.log
             android/emulator-runtime.log
             android/device-crash.txt
+            android/network-report.txt
             android/continuum-screen.png
             android/release/APK-SIZE.txt

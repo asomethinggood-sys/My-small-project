@@ -47,24 +47,28 @@ public class DeviceSmokeTest {
         while((observer.status.running||vpn())&&SystemClock.elapsedRealtime()<deadline)Thread.sleep(100);
         inst.runOnMainSync(observer::end);
     }
-    @Test public void realTunTrafficAllProtocolsAndDisconnectWhileBound()throws Exception{
+    @Test public void realTunDnsWebsitesLargeTransfersUdpAndDisconnect()throws Exception{
         shell("appops set app.continuum ACTIVATE_VPN allow");shell("pm grant app.continuum android.permission.POST_NOTIFICATIONS");
         JSONArray profiles=new JSONArray(shell("cat /sdcard/Download/continuum-fixtures.json"));
         SettingsStore store=new SettingsStore(context);observer=new StateClient(context);inst.runOnMainSync(observer::begin);
         try{
             for(int i=0;i<profiles.length();i++){
-                store.save(store.load().put("selection",0).put("profiles",new JSONArray().put(new JSONObject().put("uri",profiles.getString(i)))));
-                Activity screen=launch();press(screen,"Connect");
+                int mtu=new int[]{1280,1400,1500,1400}[i];
+                store.save(store.load().put("selection",0).put("dualStack",false).put("mtu",mtu).put("profiles",new JSONArray().put(new JSONObject().put("uri",profiles.getString(i)))));
+                Activity screen=launch();long started=SystemClock.elapsedRealtime();press(screen,"Connect");
                 await("real engine and TUN connect for fixture "+i,()->observer.status.engineRunning&&observer.status.tunOpen&&"Connected".equals(observer.status.state),100);
                 assertTrue("Android VPN network exists",vpn());
-                shell("run-as app.continuum.probe rm -f files/result");shell("am start -W -n app.continuum.probe/.ProbeActivity");
-                String result="";long deadline=SystemClock.elapsedRealtime()+20000;
+                android.util.Log.i("ContinuumProbe","Fixture "+i+" MTU "+mtu+" Connected after "+(SystemClock.elapsedRealtime()-started)+" ms (runner, not Tehran)");
+                shell("run-as app.continuum.probe rm -f files/result files/report");shell("am start -W -n app.continuum.probe/.ProbeActivity");
+                String result="";long deadline=SystemClock.elapsedRealtime()+120000;
                 while(SystemClock.elapsedRealtime()<deadline){result=shell("run-as app.continuum.probe cat files/result").trim();if(result.equals("PASS")||result.equals("FAIL"))break;Thread.sleep(250);}
-                assertEquals("Separate UID must reach proxy-only marker through TUN; fixture "+i,"PASS",result);
-                screen=launch();press(screen,"Disconnect");
-                await("Disconnect closes resources while observer remains bound",()->!observer.status.running&&!observer.status.tunOpen&&!observer.status.engineRunning&&!vpn(),6);
-                assertTrue(store.paused());
-                context.startService(new Intent(context,TunnelService.class).setAction(VpnService.SERVICE_INTERFACE));
+                String report=shell("run-as app.continuum.probe cat files/report");android.util.Log.i("ContinuumProbe","Fixture "+i+"\n"+report);
+                assertEquals("Separate UID website regression suite, fixture "+i+"\n"+report,"PASS",result);
+                screen=launch();long previousNext=observer.status.nextCheck;
+                context.startService(new Intent(context,TunnelService.class).setAction(TunnelService.REFRESH));
+                await("Check now bypasses five-minute health cache",()->observer.status.nextCheck!=previousNext&&"Connected".equals(observer.status.state),40);
+                press(screen,"Disconnect");await("Disconnect closes resources while observer remains bound",()->!observer.status.running&&!observer.status.tunOpen&&!observer.status.engineRunning&&!vpn(),6);
+                assertTrue(store.paused());context.startService(new Intent(context,TunnelService.class).setAction(VpnService.SERVICE_INTERFACE));
                 Thread.sleep(1500);assertFalse(vpn());assertFalse(observer.status.running);inst.runOnMainSync(screen::finish);
             }
         }finally{cleanup();}
