@@ -136,12 +136,40 @@ def execute(plan, output, browser_command=None):
     return result
 
 
+def print_summary(result):
+    for row in result['candidates']:
+        print('::notice title=Nyx candidate stability::' + row['candidate_id'] +
+              f"; samples={row['samples']}; successes={row['successful_samples']}; " +
+              f"consecutive={row['consecutive_successes']}; stable={row['stable_in_bounded_test']}; selectable=false",
+              flush=True)
+    for sample in result['samples']:
+        probe = sample.get('report', {}).get('live_probe', {})
+        print('::notice title=Nyx comparison sample::' + sample['candidate_id'] +
+              f"; round={sample['round']}; execution={sample['execution']}; " +
+              f"status={probe.get('status', 'not_connected')}; country={probe.get('country_verified') is True}; " +
+              f"udp={probe.get('udp_dns_passed') is True}; drop={probe.get('tunnel_drop_blocked') is True}", flush=True)
+    if os.environ.get('GITHUB_STEP_SUMMARY'):
+        lines = ['## Bounded candidate comparison', '',
+                 'Research only; no candidate is published or selectable.', '',
+                 '| Candidate | Passed / samples | Consecutive | Stable in test |',
+                 '|---|---:|---:|---|']
+        for row in result['candidates']:
+            lines.append(f"| {row['candidate_id']} | {row['successful_samples']} / {row['samples']} | " +
+                         f"{row['consecutive_successes']} | {row['stable_in_bounded_test']} |")
+        with open(os.environ['GITHUB_STEP_SUMMARY'], 'a') as stream:
+            stream.write('\n'.join(lines) + '\n')
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--plan', default='config/egress-experiment.json')
     parser.add_argument('--output', default='.runtime/egress/comparison.json')
+    parser.add_argument('--report-only', type=Path)
     args = parser.parse_args()
-    execute(json.loads(Path(args.plan).read_text()), args.output)
+    if args.report_only:
+        print_summary(json.loads(args.report_only.read_text()))
+    else:
+        execute(json.loads(Path(args.plan).read_text()), args.output)
 
 
 if __name__ == '__main__':

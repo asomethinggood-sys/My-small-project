@@ -7,18 +7,56 @@ on:
       - scripts/egress*.py
       - scripts/build-wireguard-tools.sh
       - scripts/egress*.mjs
+      - scripts/egress*.sh
       - tests/egress*.py
       - tests/egress*.mjs
       - tests/test_egress*.py
       - config/egress*.json
   workflow_dispatch:
+    inputs:
+      live_provider_test:
+        description: Run the bounded six-sample private provider comparison
+        type: boolean
+        default: false
 permissions:
   contents: read
 concurrency:
   group: nyx-egress-research-${{ github.ref }}
   cancel-in-progress: false
 jobs:
+  recover-comparison:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    permissions:
+      contents: read
+      actions: read
+    steps:
+      - uses: actions/checkout@v4
+      - name: Retrieve existing comparison without repeating provider traffic
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh run download 42659139801 --repo asomethinggood-sys/My-small-project --name nyx-browser-42659139801 --dir .runtime/egress/previous
+      - name: Summarize all samples in a separate annotation budget
+        run: python3 -m scripts.egress_batch --report-only .runtime/egress/previous/comparison.json
+  psiphon-local:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - name: Fetch pinned upstream release-candidate tools for local fixture
+        run: bash scripts/egress-psiphon-tools.sh
+      - name: Real local OSSH transport and wrong-key rejection
+        run: |
+          mkdir -p .runtime/egress
+          sudo python3 tests/egress_psiphon_kernel.py .runtime/psiphon-bin/client .runtime/psiphon-bin/server | tee .runtime/egress/kernel-psiphon.json
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: nyx-psiphon-local-${{ github.run_id }}
+          retention-days: 3
+          path: .runtime/egress/kernel-psiphon.json
   browser-acquisition:
+    if: ${{ (github.event_name == 'push' && contains(github.event.head_commit.message, '[provider-test]')) || (github.event_name == 'workflow_dispatch' && inputs.live_provider_test) }}
     needs: kernel
     runs-on: ubuntu-24.04
     timeout-minutes: 20
@@ -36,6 +74,9 @@ jobs:
           sudo python3 tests/egress_tun_migration.py
       - name: Compare bounded German candidates on this runner (no public service)
         run: timeout 930s python3 -m scripts.egress_batch
+      - name: Summarize comparison separately from per-probe notices
+        if: always()
+        run: python3 -m scripts.egress_batch --report-only .runtime/egress/comparison.json
       - uses: actions/upload-artifact@v4
         if: always()
         with:
