@@ -10,13 +10,13 @@ import ipaddress
 import json
 import math
 import re
-import select
 import socket
 import threading
 import time
 import uuid
 from urllib.parse import quote, urlencode
 from scripts.egress_control import Denied
+from scripts.egress_stream import relay
 
 
 class Gateway(http.server.ThreadingHTTPServer):
@@ -237,13 +237,6 @@ class Handler(http.server.BaseHTTPRequestHandler):
                 upstream.settimeout(3)
                 self.connection.settimeout(3)
                 upstream.sendall(('\r\n'.join(headers)+'\r\n\r\n').encode('ascii'))
-                while controller.sessions.clock() < deadline:
-                    ready, _, _ = select.select([self.connection, upstream], [], [], .1)
-                    for source in ready:
-                        data = source.recv(16384)
-                        if not data:
-                            return
-                        destination = upstream if source is self.connection else self.connection
-                        destination.sendall(data)
+                relay(self.connection, upstream, lambda: controller.sessions.clock() < deadline)
         except (OSError, ValueError):
             pass
