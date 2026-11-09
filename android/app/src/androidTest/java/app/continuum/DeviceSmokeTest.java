@@ -92,7 +92,13 @@ public class DeviceSmokeTest {
             });return ready[0];},75);
             inst.runOnMainSync(()->locationScreen.findViewById(android.R.id.content).findViewWithTag("country-DE").performClick());inst.waitForIdleSync();
             android.view.accessibility.AccessibilityNodeInfo root=inst.getUiAutomation().getRootInActiveWindow();assertNotNull(root);
-            java.util.List<android.view.accessibility.AccessibilityNodeInfo> buttons=root.findAccessibilityNodeInfosByText("Select country");assertFalse(buttons.isEmpty());assertTrue(buttons.get(0).performAction(android.view.accessibility.AccessibilityNodeInfo.ACTION_CLICK));
+            java.util.List<android.view.accessibility.AccessibilityNodeInfo> buttons=root.findAccessibilityNodeInfosByText("Select country");
+            android.view.accessibility.AccessibilityNodeInfo select=null;
+            for(android.view.accessibility.AccessibilityNodeInfo button:buttons){
+                if(button.isClickable()&&button.isEnabled()&&button.getText()!=null&&"Select country".equalsIgnoreCase(button.getText().toString())){select=button;break;}
+            }
+            assertNotNull("Exact enabled country-selection dialog button",select);
+            assertTrue(select.performAction(android.view.accessibility.AccessibilityNodeInfo.ACTION_CLICK));inst.waitForIdleSync();
             await("country selector persists only the explicit selection",()->"DE".equals(store.load().optString("country")),5);
             inst.runOnMainSync(locationScreen::finish);locations=null;
             screen=launch();press(screen,"Connect");

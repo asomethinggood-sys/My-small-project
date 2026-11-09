@@ -1,7 +1,6 @@
 package app.continuum;
 
 import android.content.Context;
-import android.util.AtomicFile;
 import org.json.*;
 import java.io.*;
 import java.nio.charset.StandardCharsets;
@@ -33,13 +32,28 @@ public final class SettingsStore {
     public String cache(String source) {JSONObject j=read("verified-v2.json");return source.equals(j.optString("source"))?j.optString("content",""):"";}
     public void cache(String source,String content) throws Exception {write("verified-v2.json",new JSONObject().put("source",source).put("content",content));}
     private JSONObject read(String name) {
-        try {byte[] data=new AtomicFile(new File(directory,name)).readFully();if(data.length>131072)return new JSONObject();return new JSONObject(new String(data,StandardCharsets.UTF_8));}
+        // AtomicFile.openRead may delete the writer's in-flight .new file.
+        // Readers in the VPN process must open only the committed base file;
+        // atomic rename keeps that descriptor on a complete old or new version.
+        try (FileInputStream input=new FileInputStream(new File(directory,name))) {
+            ByteArrayOutputStream bytes=new ByteArrayOutputStream();byte[] chunk=new byte[4096];int count;
+            while((count=input.read(chunk))!=-1){if(bytes.size()+count>131072)return new JSONObject();bytes.write(chunk,0,count);}
+            return new JSONObject(new String(bytes.toByteArray(),StandardCharsets.UTF_8));
+        }
         catch(Exception e){return new JSONObject();}
     }
     private void write(String name,JSONObject value) throws IOException {
-        AtomicFile file=new AtomicFile(new File(directory,name));FileOutputStream stream=null;
-        try {stream=file.startWrite();stream.write(value.toString().getBytes(StandardCharsets.UTF_8));file.finishWrite(stream);}
-        catch(IOException e){file.failWrite(stream);throw e;}
+        // Use the same rename-only protocol on all supported Android versions.
+        // Older AtomicFile implementations temporarily write the base in place.
+        synchronized(SettingsStore.class){
+            File pending=new File(directory,name+".new"),base=new File(directory,name);
+            try{
+                try(FileOutputStream stream=new FileOutputStream(pending)){
+                    stream.write(value.toString().getBytes(StandardCharsets.UTF_8));stream.getFD().sync();
+                }
+                if(!pending.renameTo(base))throw new IOException("Could not commit settings");
+            }finally{pending.delete();}
+        }
     }
     public static String manual(JSONObject settings) throws JSONException {
         int selected=settings.optInt("selection",-1);
