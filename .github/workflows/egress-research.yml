@@ -19,6 +19,7 @@ concurrency:
   cancel-in-progress: false
 jobs:
   browser-acquisition:
+    needs: kernel
     runs-on: ubuntu-24.04
     timeout-minutes: 10
     steps:
@@ -29,8 +30,14 @@ jobs:
         run: |
           npm install --prefix .runtime/browser --no-audit --no-fund playwright@1.56.1
           .runtime/browser/node_modules/.bin/playwright install --with-deps chromium
-      - name: Probe official German download control (no challenge solving)
-        run: timeout 90s node scripts/egress_vpnbook_browser.mjs
+      - name: Install OpenVPN for one bounded private test
+        run: |
+          sudo apt-get install -y --no-install-recommends openvpn iptables
+          sudo python3 tests/egress_tun_migration.py
+      - name: Probe official German download and isolated exit (no public service)
+        env:
+          NYX_PROVIDER_PROBE: 'true'
+        run: timeout 210s node scripts/egress_vpnbook_browser.mjs
       - uses: actions/upload-artifact@v4
         if: always()
         with:

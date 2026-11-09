@@ -94,6 +94,19 @@ try {
             if (result.status === 0) report.inspection = JSON.parse(result.stdout);
             else report.inspection = {status: 'inspection_process_failed'};
           }
+          if (process.env.NYX_PROVIDER_PROBE === 'true' && report.format === 'ovpn'
+              && report.inspection?.status === 'sanitized_unverified') {
+            const bodyText = await page.locator('body').innerText();
+            const username = bodyText.match(/Username\s*:\s*(vpnbook)\b/i);
+            const password = bodyText.match(/Password\s*:\s*([A-Za-z0-9_-]{4,64})\b/i);
+            if (username && password && !/loading|hidden/i.test(password[1])) {
+              const input = JSON.stringify({provider: 'vpnbook', username: 'vpnbook', password: password[1],
+                profile_base64: Buffer.concat(chunks).toString('base64')});
+              const result = spawnSync('sudo', ['-n', 'python3', '-m', 'scripts.egress_openvpn_probe'],
+                {input, encoding: 'utf8', timeout: 125000, maxBuffer: 65536, env: {PATH: process.env.PATH}});
+              report.live_probe = result.status === 0 ? JSON.parse(result.stdout) : {status: 'probe_process_failed'};
+            } else report.live_probe = {status: 'public_credentials_not_detected'};
+          }
           await download.delete();
         }
       }
@@ -112,6 +125,9 @@ if (report.inspection) {
   if (report.inspection.reason) console.log(`::notice title=Nyx configuration policy::${report.inspection.reason}`);
   if (report.inspection.directive_names) console.log(`::notice title=Nyx configuration directives::${report.inspection.directive_names.join(',')}`);
   if (report.inspection.inline_blocks) console.log(`::notice title=Nyx configuration block types::${report.inspection.inline_blocks.join(',')}`);
+}
+if (report.live_probe) {
+  console.log(`::notice title=Nyx bounded provider test::${report.live_probe.status}; country_verified=${report.live_probe.country_verified === true}; UDP_DNS=${report.live_probe.udp_dns_passed === true}; host_routes_unchanged=${report.live_probe.host_main_routes_unchanged === true}`);
 }
 for (const text of report.remaining_controls || []) {
   console.log(`::notice title=Nyx remaining control::${text.replace(/%/g, '%25').replace(/\r/g, '%0D').replace(/\n/g, '%0A')}`);
