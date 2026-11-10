@@ -238,7 +238,8 @@ def probe(envelope, metadata_fetcher=None, *, private_trial=None):
                        '--disable-dco', *auth_args, '--management', str(management), 'unix',
                        '--log', str(log), '--connect-retry-max', '1', '--connect-timeout', '10',
                        '--auth-retry', 'none', '--remap-usr1', 'SIGTERM', '--allow-compression', 'no',
-                       '--pull-filter', 'reject', 'comp-lzo', '--pull-filter', 'reject', 'compress']
+                       '--pull-filter', 'reject', 'comp-lzo', '--pull-filter', 'reject', 'compress',
+                       '--pull-filter', 'reject', 'auth ']
             stage = 'openvpn_start'
             process = subprocess.Popen(command, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
                                        env={'PATH': '/usr/sbin:/usr/bin:/sbin:/bin'})

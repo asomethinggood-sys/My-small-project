@@ -65,6 +65,18 @@ def acquire(country, endpoint, path):
         json.dump(selected[0] | {'cipher_policy': 'cbc_sha256'}, output)
 
 
+def acquire_current(country, path):
+    """One bounded startup batch from one current official directory snapshot."""
+    import json
+    import os
+    from scripts.egress_catalog import fetch_directory
+    selected = candidates(fetch_directory(), {country}, limit=3)
+    if not selected:
+        raise ValueError('Selected official candidate unavailable')
+    with open(path, 'x', opener=lambda name, flags: os.open(name, flags, 0o600)) as output:
+        json.dump({'candidates': [item | {'cipher_policy': 'cbc_sha256'} for item in selected]}, output)
+
+
 def main():
     import json
     from scripts.egress_catalog import fetch_directory

@@ -35,9 +35,9 @@ jobs:
         run: |
           timeout 60s python3 - <<'PY'
           import os
-          from scripts.egress_vpngate import acquire
+          from scripts.egress_vpngate import acquire_current
           try:
-              acquire('JP', '219.100.37.175', os.path.join(os.environ['RUNNER_TEMP'], 'nyx-personal-upstream.json'))
+              acquire_current('JP', os.path.join(os.environ['RUNNER_TEMP'], 'nyx-personal-upstream.json'))
           except Exception as error:
               known = {'Invalid official directory', 'Selected official candidate unavailable', 'Directory HTTP failure', 'Directory exceeds size budget'}
               reason = str(error) if str(error) in known else type(error).__name__

@@ -177,9 +177,20 @@ def main():
     path=Path(os.environ['RUNNER_TEMP'])/'nyx-personal-upstream.json'
     try:
         envelope=json.loads(path.read_text());path.unlink()
-        result=probe(envelope,private_trial=trial)
-        print('::notice title=Private trial result::'+json.dumps(result),flush=True)
-        return 0 if result.get('country_verified') and result.get('host_main_routes_unchanged') else 1
+        batch = envelope.get('candidates', [envelope])
+        if not isinstance(batch, list) or not 1 <= len(batch) <= 3:
+            raise ValueError('Bounded startup batch required')
+        if len({item.get('country', 'DE') for item in batch}) != 1:
+            raise ValueError('Cross-country startup fallback rejected')
+        for item in batch:
+            result=probe(item,private_trial=trial)
+            print('::notice title=Private trial result::'+json.dumps(result),flush=True)
+            if result.get('country_verified') and result.get('host_main_routes_unchanged'):
+                return 0
+            # Never replace a running/issued phone trial after health failure.
+            if result.get('failed_stage') == 'private_phone_trial':
+                break
+        return 1
     except Exception:
         # No exception text: it can contain private provisioning/configuration.
         print('::error::Private trial failed closed; no credentials or routes published.',flush=True)
