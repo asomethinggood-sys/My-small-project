@@ -103,7 +103,7 @@ public final class LocationsActivity extends Activity {
         if(usable)dialog.setPositiveButton("Select country",(d,w)->{CountryClient.Available current=available.get(code);if(current!=null&&current.deadline>SystemClock.elapsedRealtime())selectCountry(code);else Toast.makeText(this,"Availability expired. Refresh first.",Toast.LENGTH_LONG).show();});
         dialog.show();
     }
-    private String label(String id){switch(id){case "vpngate":return "VPN Gate";case "vpnbook":return "VPNBook";case "cloudflare":return "Cloudflare WARP";case "psiphon":return "Psiphon";case "proton":return "Proton";case "riseup":return "Riseup";case "tor":return "Tor";default:return "Unknown";}}
+    private String label(String id){switch(id){case "vpngate":return "VPN Gate";case "vpnbook":return "VPNBook";case "vpnjantit":return "VPN Jantit";case "cloudflare":return "Cloudflare WARP";case "psiphon":return "Psiphon";case "proton":return "Proton";case "riseup":return "Riseup";case "tor":return "Tor";default:return "Unknown";}}
     private void selectCountry(String code){
         try{SettingsStore store=new SettingsStore(this);org.json.JSONObject settings=store.load();settings.put("country",code);store.save(settings);routeState.refresh();Toast.makeText(this,code.isEmpty()?"Default connection selected":"Selected "+name(code)+". Connect from the home screen; no default fallback.",Toast.LENGTH_LONG).show();render();}catch(Exception e){Toast.makeText(this,"Could not save country selection",Toast.LENGTH_LONG).show();}
     }

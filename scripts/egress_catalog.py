@@ -124,6 +124,11 @@ def attach_advertisements(catalog, source_report):
     timestamp = source_report.get('generated_at', 0)
     fresh = (type(timestamp) is int and now - 900 <= timestamp <= now + 60)
     advertised = set()
+    # Jantit rows are deduplicated by provider/host in the fresh snapshot.
+    # These are page claims, not proof of a reachable or authorized exit.
+    for item in catalog.get('observations', []):
+        if item.get('provider') == 'vpnjantit' and item.get('protocol') == 'openvpn':
+            advertised.add((item['country'], 'vpnjantit', 'openvpn', item['id']))
     if fresh:
         for source in source_report.get('sources', []):
             kind = {'vpnbook-openvpn': 'openvpn', 'vpnbook-wireguard': 'wireguard'}.get(source.get('source'))
@@ -167,6 +172,7 @@ def main():
     source = parser.add_mutually_exclusive_group()
     source.add_argument('--live', action='store_true')
     source.add_argument('--fixture', type=Path)
+    parser.add_argument('--vpnjantit-live', action='store_true', help='Also fetch the official VPN Jantit page')
     parser.add_argument('--output', default='.runtime/egress/catalog.json')
     args = parser.parse_args()
     policy = json.loads(Path(args.policy).read_text())
@@ -185,6 +191,16 @@ def main():
             failed = True
     else:
         sources.append({'provider': 'vpngate', 'status': 'not_fetched'})
+    if args.vpnjantit_live:
+        from scripts.egress_vpnjantit import fetch_directory as fetch_jantit, parse_directory as parse_jantit
+        try:
+            observations.extend(parse_jantit(fetch_jantit(), set(policy['target_countries'])))
+            sources.append({'provider': 'vpnjantit', 'status': 'fetched', 'mode': 'live'})
+        except (OSError, ValueError):
+            sources.append({'provider': 'vpnjantit', 'status': 'fetch_or_parse_failed'})
+            failed = True
+    else:
+        sources.append({'provider': 'vpnjantit', 'status': 'not_fetched'})
     result = build_catalog(policy, observations, sources)
     registry = json.loads(Path(args.adapters).read_text())
     result['adapters'] = registry['adapters']

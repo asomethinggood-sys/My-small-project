@@ -4,6 +4,7 @@
   "catalog_ttl_seconds": 900,
   "providers": [
     {"id": "vpngate", "discovery": "public_csv", "shared_use_approved": false, "blocker": "Volunteer logging disclosure and shared-use review required; live country availability unknown."},
+    {"id": "vpnjantit", "discovery": "official_page", "shared_use_approved": false, "blocker": "Personal account provisioning, country verification and shared-use permission required."},
     {"id": "vpnbook", "discovery": "official_page_and_browser_probe", "shared_use_approved": false, "blocker": "German OpenVPN bounded probe passed; personal-use policy still requires permission before public sharing."},
     {"id": "proton", "discovery": "not_implemented", "shared_use_approved": false, "blocker": "Account, country entitlement and sharing permission required."},
     {"id": "riseup", "discovery": "not_implemented", "shared_use_approved": false, "blocker": "Country selection and shared-use permission unverified."},

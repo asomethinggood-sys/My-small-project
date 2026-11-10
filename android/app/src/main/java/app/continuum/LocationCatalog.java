@@ -6,7 +6,7 @@ import java.util.*;
 /** Public metadata only. This type deliberately cannot produce a connection profile. */
 public final class LocationCatalog {
     public static final String TARGETS="US CA MX BR AR GB IE FR DE NL BE CH AT IT ES PT SE NO DK FI PL CZ RO TR JP KR SG IN AU NZ";
-    public static final Set<String> PROVIDERS=Set.of("vpngate","vpnbook","cloudflare","psiphon","proton","riseup","tor");
+    public static final Set<String> PROVIDERS=Set.of("vpngate","vpnbook","vpnjantit","cloudflare","psiphon","proton","riseup","tor");
     public static final class Exit {
         public final String provider,type,udp;
         public final int discovered,advertised;
