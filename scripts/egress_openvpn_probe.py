@@ -302,6 +302,7 @@ def probe(envelope, metadata_fetcher=None, *, private_trial=None):
                 with log.open(errors='replace') as stream:
                     diagnostic = stream.read(65536)
             result['country_verified'] = False
+            result['verified_country'] = None
             result['failed_stage'] = stage
             result['openvpn_alive_at_failure'] = process is not None and process.poll() is None
             result['status'] = ('post_handshake_probe_failed' if result.get('handshake_completed') else

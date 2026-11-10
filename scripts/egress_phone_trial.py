@@ -81,6 +81,7 @@ def trial(namespace, upstream, initial):
         route_report={}
         def verify_route(cancel):
             report=probe_issued_route('https://'+gateway.public_host,'route_diagnostic',diagnostic_key,'DE',ROOT/'.runtime/bin/xray',cancel)
+            initial['issued_route_evidence']=report
             print('::notice title=Phone-path exit evidence::'+json.dumps(report),flush=True)
             if not report['country_verified'] or report.get('udp_dns_passed') is not True:
                 controller.pool_failed('personal-de')
@@ -144,7 +145,10 @@ def trial(namespace, upstream, initial):
         end=time.monotonic()+duration
         while time.monotonic()<end:
             supervisor.tick()
-            if upstream.poll() is not None or any(child.poll() is not None for child in children):break
+            if not sessions.pools['personal-de']['ready']:
+                raise ProbeError('private_trial_health_failed_closed')
+            if upstream.poll() is not None or any(child.poll() is not None for child in children):
+                raise ProbeError('private_trial_component_stopped')
             time.sleep(.25)
     finally:
         if supervisor:supervisor.close()
