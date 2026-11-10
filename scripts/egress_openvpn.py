@@ -16,7 +16,9 @@ from scripts.egress_config import global_ip
 MAX_BYTES = 128 * 1024
 
 
-def sanitize(text):
+def sanitize(text, *, aead_only=False):
+    if type(aead_only) is not bool:
+        raise ValueError('Explicit cipher negotiation policy required')
     if len(text.encode()) > MAX_BYTES or '\x00' in text:
         raise ValueError('Configuration size/content rejected')
     values, blocks = {}, {}
@@ -91,7 +93,13 @@ def sanitize(text):
         if name in values and (len(values[name]) != 1 or
                                not set(values[name][0].split(':')).issubset(safe_ciphers)):
             raise ValueError('Unsupported cipher')
-    if values.get('auth', ['SHA256']) not in (['SHA256'], ['SHA384'], ['SHA512']):
+    digest = values.get('auth', ['SHA256'])
+    if aead_only and digest == ['SHA1'] and 'tls-auth' not in blocks:
+        # AEAD supplies its own data-channel authentication. A legacy data-MAC
+        # hint may be discarded only when CBC/fallback are entirely disabled.
+        # Never rewrite a SHA1 tls-auth control channel or weaken TLS checks.
+        digest = ['SHA256']
+    if digest not in (['SHA256'], ['SHA384'], ['SHA512']):
         raise ValueError('Unsupported authentication digest')
     for name, allowed_values in [('verb', {'0', '1', '2', '3', '4'}),
                                  ('resolv-retry', {'infinite', '10', '30', '60'}),
@@ -140,8 +148,10 @@ def sanitize(text):
               'tls-version-min ' + values.get('tls-version-min', ['1.2'])[0],
               'script-security 1', 'auth-nocache', 'route-noexec', 'ifconfig-noexec',
               'route-nopull', 'pull-filter ignore redirect-gateway',
-              'pull-filter ignore dhcp-option', 'auth ' + values.get('auth', ['SHA256'])[0], 'verb 3']
-    for name in ['cipher', 'data-ciphers', 'key-direction']:
+              'pull-filter ignore dhcp-option', 'auth ' + digest[0], 'verb 3']
+    if aead_only:
+        output.append('data-ciphers AES-256-GCM:AES-128-GCM:CHACHA20-POLY1305')
+    for name in (['key-direction'] if aead_only else ['cipher', 'data-ciphers', 'key-direction']):
         if name in values:
             output.append(name + ' ' + values[name][0])
     for name, content in blocks.items():
@@ -150,4 +160,5 @@ def sanitize(text):
     # never a provider-specified path. It also applies namespace IPs/routes itself.
     return {'config': '\n'.join(output) + '\n', 'endpoint_ip': str(address),
             'endpoint_port': int(remote[1]), 'transport': 'udp' if protocol[0].startswith('udp') else 'tcp',
-            'credentials_required': 'auth-user-pass' in values}
+            'credentials_required': 'auth-user-pass' in values,
+            'cipher_policy': 'aead_only_no_fallback' if aead_only else 'strict_profile'}

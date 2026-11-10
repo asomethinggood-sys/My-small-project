@@ -54,6 +54,25 @@ class OpenVPNBoundaryTests(unittest.TestCase):
         self.assertIn('proto tcp-client\n', result['config'])
         with self.assertRaises(ValueError):sanitize(self.config.replace('proto udp', 'proto tcp-server'))
 
+    def test_explicit_aead_mode_discards_only_legacy_data_mac_hints(self):
+        legacy = self.config + 'auth SHA1\ncipher AES-128-CBC\n'
+        with self.assertRaises(ValueError):sanitize(legacy)
+        result = sanitize(legacy, aead_only=True)
+        self.assertEqual(result['cipher_policy'], 'aead_only_no_fallback')
+        self.assertIn('data-ciphers AES-256-GCM:AES-128-GCM:CHACHA20-POLY1305', result['config'])
+        self.assertIn('auth SHA256', result['config'])
+        self.assertIn('remote-cert-tls server', result['config'])
+        self.assertIn('tls-version-min 1.2', result['config'])
+        for removed in ['SHA1', 'CBC', 'data-ciphers-fallback']:
+            self.assertNotIn(removed, result['config'])
+
+    def test_aead_mode_does_not_weaken_tls_or_control_channel(self):
+        for extra in ['auth MD5\n', 'tls-version-min 1.0\n', 'cipher BF-CBC\n',
+                      'data-ciphers-fallback AES-128-CBC\n',
+                      'auth SHA1\n<tls-auth>\ninvalid\n</tls-auth>\n']:
+            with self.assertRaises(ValueError):sanitize(self.config + extra, aead_only=True)
+        with self.assertRaises(ValueError):sanitize(self.config, aead_only='yes')
+
     def test_tcp_transport_distinct_from_udp_payload_capability(self):
         result = sanitize(self.config.replace('proto udp', 'proto tcp-client'))
         self.assertEqual(result['transport'], 'tcp')

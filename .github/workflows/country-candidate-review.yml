@@ -26,18 +26,26 @@ jobs:
               if index>=10000 or inspected>=100:break
               country=row.get('CountryShort','')
               if country not in targets or not row.get('OpenVPN_ConfigData_Base64'):continue
-              count=counts.setdefault(country,{'advertised':0,'inspected':0,'sanitizer_accepted':0,'protocols':[]})
+              count=counts.setdefault(country,{'advertised':0,'inspected':0,'strict_accepted':0,'aead_only_candidate':0,'protocols':[]})
               count['advertised']+=1
               if count['inspected']>=5:continue
               count['inspected']+=1;inspected+=1
               try:
                   data=base64.b64decode(row['OpenVPN_ConfigData_Base64'],validate=True)
                   if len(data)>128*1024:raise ValueError('Configuration size rejected')
-                  config=sanitize(data.decode('utf-8-sig'))
-                  count['sanitizer_accepted']+=1
+                  profile=data.decode('utf-8-sig')
+                  try:
+                      config=sanitize(profile)
+                      count['strict_accepted']+=1
+                  except ValueError as error:
+                      rejections['strict: '+str(error)]+=1
+                      config=sanitize(profile,aead_only=True)
+                      count['aead_only_candidate']+=1
                   if config['transport'] not in count['protocols']:count['protocols'].append(config['transport'])
-              except (ValueError,UnicodeError) as error:
-                  rejections[str(error)]+=1
+              except UnicodeError:
+                  rejections['encoding_rejected']+=1
+              except ValueError as error:
+                  rejections['rejected: '+str(error)]+=1
           print('::notice title=Alternative candidate counts (not working exits)::'+json.dumps(counts))
           print('::notice title=Sanitizer rejection categories::'+json.dumps(dict(rejections)))
           PY
