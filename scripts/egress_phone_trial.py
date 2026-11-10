@@ -1,7 +1,7 @@
 """One-owner, 45-minute phone acceptance trial. Never a shared/public VPN service.
 
 Uses the same isolated namespace and sanitized official personal-use OpenVPN
-input as the existing bounded probe. Only a verified German exit is selectable.
+input as the existing bounded probe. Only the verified exit country is selectable.
 Credentials are encrypted to the session recipient; no plaintext is published.
 """
 import base64
@@ -30,6 +30,13 @@ ROOT = Path(__file__).resolve().parents[1]
 
 
 def trial(namespace, upstream, initial):
+    country = initial.get('verified_country')
+    provider = initial.get('provider')
+    if (not isinstance(country, str) or not re.fullmatch('[A-Z]{2}', country)
+            or country != initial.get('advertised_country')
+            or provider not in ('vpnbook', 'vpngate') or not initial.get('country_verified')):
+        raise ProbeError('trial_requires_verified_identity')
+    # The legacy pool ID is opaque; availability and leases use verified country.
     # Positive/negative/positive controls before making the pool selectable.
     upstream.send_signal(signal.SIGSTOP)
     try:
@@ -69,7 +76,7 @@ def trial(namespace, upstream, initial):
         sessions=Sessions(max_pools=1)
         # Explicitly scoped to this one owner's personal acceptance test. This
         # is not an approval to redistribute the provider to multiple users.
-        sessions.register('personal-de','DE','vpnbook','openvpn',True)
+        sessions.register('personal-de',country,provider,'openvpn',True)
         plane=LocalIngressPlane({'personal-de':('198.19.250.2',18888)},max_leases=4)
         key=secrets.token_urlsafe(32);owner='phone_trial'
         # Separate internal diagnostics quota must not consume phone renewal slots.
@@ -80,14 +87,14 @@ def trial(namespace, upstream, initial):
         route_ready=False
         route_report={}
         def verify_route(cancel):
-            report=probe_issued_route('https://'+gateway.public_host,'route_diagnostic',diagnostic_key,'DE',ROOT/'.runtime/bin/xray',cancel)
+            report=probe_issued_route('https://'+gateway.public_host,'route_diagnostic',diagnostic_key,country,ROOT/'.runtime/bin/xray',cancel)
             initial['issued_route_evidence']=report
             print('::notice title=Phone-path exit evidence::'+json.dumps(report),flush=True)
             if not report['country_verified'] or report.get('udp_dns_passed') is not True:
                 controller.pool_failed('personal-de')
                 raise ProbeError('issued_route_country_mismatch')
             route_report.clear();route_report.update(report)
-            return Evidence('DE',True,True,True,True,True,time.monotonic()+150)
+            return Evidence(country,True,True,True,True,True,time.monotonic()+150)
         def health(cancel):
             if upstream.poll() is not None or any(child.poll() is not None for child in children):
                 raise ProbeError('trial_component_stopped')
@@ -104,8 +111,14 @@ def trial(namespace, upstream, initial):
                     if not isinstance(value,dict):continue
                     observations[index]=value
                 except (ProbeError,ValueError):pass
-            if not assess_responses(observations, require_conflict_source=True)['country_verified']:raise ProbeError('exit_not_verified')
-            return Evidence('DE',True,True,True,True,True,time.monotonic()+90)
+            from scripts.egress_path_probe import conflict_lookup
+            measured = assess_responses(observations, expected_country=country)
+            if measured.get('exit_ipv4'):
+                observations[4] = conflict_lookup(measured['exit_ipv4'])
+            else:
+                observations.pop(4, None)
+            if not assess_responses(observations, country, require_conflict_source=True)['country_verified']:raise ProbeError('exit_not_verified')
+            return Evidence(country,True,True,True,True,True,time.monotonic()+90)
         supervisor=Supervisor(controller,{'personal-de':health},interval=45,timeout=40)
         cf_log=temporary/'connector.log'
         with cf_log.open('w') as log:
@@ -125,7 +138,7 @@ def trial(namespace, upstream, initial):
         verify_route(threading.Event())
         route_ready=True
         duration=2700
-        provision=json.dumps({'countryService':'https://'+gateway.public_host,'countryUser':owner,'countryKey':key,'country':'DE','exit_ip':route_report['exit_ipv4'],'observed_countries':route_report['observed_countries'],'expires_at':int(time.time())+duration},separators=(',',':')).encode()
+        provision=json.dumps({'countryService':'https://'+gateway.public_host,'countryUser':owner,'countryKey':key,'country':country,'exit_ip':route_report['exit_ipv4'],'observed_countries':route_report['observed_countries'],'expires_at':int(time.time())+duration},separators=(',',':')).encode()
         encrypted=subprocess.run(['openssl','pkeyutl','-encrypt','-pubin','-inkey',str(ROOT/'config/trial-recipient.pub'),'-pkeyopt','rsa_padding_mode:oaep','-pkeyopt','rsa_oaep_md:sha256'],input=provision,capture_output=True,check=True).stdout
         ciphertext=base64.b64encode(encrypted).decode()
         # GitHub buffers check annotations until job completion. Publish only
@@ -141,7 +154,7 @@ def trial(namespace, upstream, initial):
         if prior.returncode==0:body['sha']=json.loads(prior.stdout)['sha']
         subprocess.run(['gh','api','--method','PUT',endpoint,'--input','-'],input=json.dumps(body),text=True,capture_output=True,check=True)
         print('::notice title=Private trial encrypted provisioning::'+ciphertext,flush=True)
-        print('::notice title=Private live trial::One-owner Germany trial ready; real geography quorum and UDP checks passed. Automatic shutdown in 45 minutes. Other countries unavailable.',flush=True)
+        print('::notice title=Private live trial::One-owner '+country+' trial ready; real geography quorum and UDP checks passed. Automatic shutdown in 45 minutes. Other countries unavailable.',flush=True)
         end=time.monotonic()+duration
         while time.monotonic()<end:
             supervisor.tick()

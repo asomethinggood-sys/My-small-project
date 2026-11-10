@@ -31,14 +31,13 @@ jobs:
           chmod 755 .runtime/bin/cloudflared
           npm install --prefix .runtime/browser --no-audit --no-fund playwright@1.56.1
           .runtime/browser/node_modules/.bin/playwright install --with-deps chromium
-      - name: Acquire official personal-use German upstream without publishing configuration
-        env:
-          NYX_PROVIDER_PROBE: 'true'
-          NYX_PRIVATE_TRIAL_ACQUIRE: 'true'
-          NYX_VPNBOOK_SERVER: de20
-          NYX_VPNBOOK_PORT: '53'
+      - name: Acquire explicitly selected official Japanese candidate
         run: |
-          timeout 150s node scripts/egress_vpnbook_browser.mjs
+          timeout 60s python3 - <<'PY'
+          import os
+          from scripts.egress_vpngate import acquire
+          acquire('JP', '219.100.37.239', os.path.join(os.environ['RUNNER_TEMP'], 'nyx-personal-upstream.json'))
+          PY
           test -s "$RUNNER_TEMP/nyx-personal-upstream.json"
       - name: Start verified one-owner trial and publish only encrypted provisioning
         env:

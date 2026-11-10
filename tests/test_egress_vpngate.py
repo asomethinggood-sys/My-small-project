@@ -29,6 +29,29 @@ class VPNGateTests(unittest.TestCase):
         with self.assertRaises(ValueError):
             prepare(self.envelope | dict(profile_base64=encoded))
 
+    def test_acquisition_is_exact_and_private(self):
+        import json
+        import tempfile
+        from pathlib import Path
+        from unittest.mock import patch
+        from scripts.egress_vpngate import acquire
+        row = 'vpn-test,8.8.8.8,JP,' + self.envelope['profile_base64'] + '\n'
+        directory = '*vpn_servers\n#HostName,IP,CountryShort,OpenVPN_ConfigData_Base64\n' + row
+        with tempfile.TemporaryDirectory() as root, patch('scripts.egress_catalog.fetch_directory', return_value=directory):
+            path = Path(root) / 'input.json'
+            acquire('JP', '8.8.8.8', path)
+            self.assertEqual(path.stat().st_mode & 0o777, 0o600)
+            self.assertEqual(json.loads(path.read_text())['cipher_policy'], 'cbc_sha256')
+            with self.assertRaises(ValueError):acquire('DE', '8.8.8.8', Path(root) / 'other')
+            with self.assertRaises(ValueError):acquire('JP', '1.1.1.1', Path(root) / 'other')
+            with self.assertRaises(FileExistsError):acquire('JP', '8.8.8.8', path)
+
+    def test_trial_rejects_unverified_or_mismatched_country_before_network(self):
+        from scripts.egress_phone_trial import trial
+        from scripts.egress_openvpn_probe import ProbeError
+        for evidence in [{}, dict(verified_country='JP', advertised_country='DE', provider='vpngate', country_verified=True)]:
+            with self.assertRaises(ProbeError):trial('unused', None, evidence)
+
     def test_directory_deduplicates_and_filters_targets(self):
         row = 'vpn-test,8.8.8.8,JP,' + self.envelope['profile_base64'] + '\n'
         directory = '*vpn_servers\n#HostName,IP,CountryShort,OpenVPN_ConfigData_Base64\n' + row * 5

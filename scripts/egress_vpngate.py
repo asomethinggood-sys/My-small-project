@@ -35,6 +35,36 @@ def candidates(text, targets, limit=3):
     return accepted
 
 
+def acquire(country, endpoint, path):
+    """Acquire one explicitly selected official endpoint; no candidate rotation."""
+    from scripts.egress_catalog import fetch_directory
+    from pathlib import Path
+    import json
+    import ipaddress
+    endpoint = str(ipaddress.IPv4Address(endpoint))
+    text = fetch_directory()
+    # Filter directory rows before applying the bounded parser. Do not create
+    # a fabricated profile or substitute an endpoint absent from the directory.
+    lines = text.splitlines()
+    if len(lines) < 2 or lines[0].strip() != '*vpn_servers':
+        raise ValueError('Invalid official directory')
+    rows = csv.DictReader(io.StringIO('\n'.join([lines[1].lstrip('#')] + lines[2:])))
+    stream = io.StringIO()
+    stream.write('*vpn_servers\n#')
+    writer = csv.DictWriter(stream, fieldnames=rows.fieldnames)
+    writer.writeheader()
+    for index, row in enumerate(rows):
+        if index >= 10000:break
+        if row.get('IP') == endpoint and row.get('CountryShort') == country:
+            writer.writerow(row)
+    selected = candidates(stream.getvalue(), {country}, limit=1)
+    if not selected:
+        raise ValueError('Selected official candidate unavailable')
+    destination = Path(path)
+    with open(destination, 'x', opener=lambda name, flags: __import__('os').open(name, flags, 0o600)) as output:
+        json.dump(selected[0] | {'cipher_policy': 'cbc_sha256'}, output)
+
+
 def main():
     import json
     from scripts.egress_catalog import fetch_directory
