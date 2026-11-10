@@ -39,6 +39,17 @@ def candidates(text, targets, limit=3):
     return accepted
 
 
+def trial_country(message, targets):
+    """Extract exactly one explicit target from a deliberate trial marker."""
+    import re
+    if not isinstance(message, str):
+        raise ValueError('Explicit country trial marker required')
+    matches = re.findall(r'\[private-country-trial:([A-Z]{2})\]', message)
+    if message.count('[private-country-trial:') != 1 or len(matches) != 1 or matches[0] not in targets:
+        raise ValueError('One supported country trial marker required')
+    return matches[0]
+
+
 def acquire(country, endpoint, path):
     """Acquire one explicitly selected official endpoint; no candidate rotation."""
     from scripts.egress_catalog import fetch_directory

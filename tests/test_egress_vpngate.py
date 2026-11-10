@@ -63,6 +63,17 @@ class VPNGateTests(unittest.TestCase):
             self.assertEqual(path.stat().st_mode & 0o777, 0o600)
             with self.assertRaises(ValueError):acquire_current('DE', Path(root) / 'other')
 
+    def test_trial_marker_requires_one_explicit_target(self):
+        from scripts.egress_vpngate import trial_country
+        self.assertEqual(trial_country('Try [private-country-trial:KR]', {'KR', 'JP'}), 'KR')
+        for message in ['', '[private-country-trial]', '[private-country-trial:kr]',
+                        '[private-country-trial:XX]',
+                        '[private-country-trial:KR] [private-country-trial:JP]',
+                        '[private-country-trial:KR] [private-country-trial:KR]',
+                        '[private-country-trial:KR] [private-country-trial:jp]', None]:
+            with self.assertRaises(ValueError):
+                trial_country(message, {'KR', 'JP'})
+
     def test_trial_rejects_unverified_or_mismatched_country_before_network(self):
         from scripts.egress_phone_trial import trial
         from scripts.egress_openvpn_probe import ProbeError

@@ -1,5 +1,9 @@
 # Nyx investigation: current branch
 
+For the later Korean issued-route diagnostic and five-country namespace probes,
+see [country-route follow-up](nyx-country-route-followup.md). Those finite tests
+have stopped and do not establish a current service or a phone test.
+
 ## Scope and status
 
 This branch started from the legacy `main` tree; the Nyx source and historical

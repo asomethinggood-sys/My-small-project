@@ -10,32 +10,44 @@ on:
 permissions:
   contents: write
 concurrency:
-  group: ${{ contains(github.event.head_commit.message, '[private-country-trial]') && 'private-phone-country-trial' || format('trial-validation-{0}', github.run_id) }}
-  # A manually requested replacement must stop the previous private trial.
-  cancel-in-progress: true
+  group: ${{ contains(github.event.head_commit.message, '[private-country-trial:') && 'private-phone-country-trial' || format('trial-validation-{0}', github.run_id) }}
+  # Never terminate an already-issued phone session on another request.
+  # Explicit trials serialize because their encrypted handoff file is shared.
+  cancel-in-progress: false
 jobs:
   trial:
-    if: contains(github.event.head_commit.message, '[private-country-trial]')
+    if: contains(github.event.head_commit.message, '[private-country-trial:')
     runs-on: ubuntu-24.04
     timeout-minutes: 60
     steps:
       - uses: actions/checkout@v4
       - name: Validate bounded control and configuration policies
         run: python3 -m unittest discover -s tests -p 'test_egress*.py' -q
+      - name: Select exactly one supported target from the explicit trial marker
+        run: |
+          python3 - <<'PY'
+          import json, os
+          from scripts.egress_catalog import validate_policy
+          from scripts.egress_vpngate import trial_country
+          with open('config/egress.json') as f: policy=json.load(f)
+          validate_policy(policy)
+          with open(os.environ['GITHUB_EVENT_PATH']) as f: event=json.load(f)
+          country=trial_country(event.get('head_commit', {}).get('message', ''), policy['target_countries'])
+          with open(os.environ['GITHUB_ENV'], 'a') as f: f.write('TRIAL_COUNTRY='+country+'\n')
+          PY
       - name: Install isolated trial tools
         run: |
           sudo apt-get update -qq
           sudo apt-get install -y --no-install-recommends openvpn iptables
           bash scripts/download-binaries.sh .runtime/bin --xray-only
-          curl -fL --retry 2 --max-time 90 https://github.com/cloudflare/cloudflared/releases/download/2026.2.0/cloudflared-linux-amd64 -o .runtime/bin/cloudflared
-          chmod 755 .runtime/bin/cloudflared
-      - name: Acquire explicitly selected official Japanese candidate
+          bash scripts/download-cloudflared.sh .runtime/bin
+      - name: Acquire candidates for the explicitly selected country
         run: |
           timeout 60s python3 - <<'PY'
           import os
           from scripts.egress_vpngate import acquire_current
           try:
-              acquire_current('JP', os.path.join(os.environ['RUNNER_TEMP'], 'nyx-personal-upstream.json'))
+              acquire_current(os.environ['TRIAL_COUNTRY'], os.path.join(os.environ['RUNNER_TEMP'], 'nyx-personal-upstream.json'))
           except Exception as error:
               known = {'Invalid official directory', 'Selected official candidate unavailable', 'Directory HTTP failure', 'Directory exceeds size budget'}
               reason = str(error) if str(error) in known else type(error).__name__
@@ -47,7 +59,16 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          sudo --preserve-env=RUNNER_TEMP,GH_TOKEN,GITHUB_REPOSITORY,GITHUB_REF_NAME,GITHUB_RUN_ID python3 -u -m scripts.egress_phone_trial > "$RUNNER_TEMP/nyx-phone-trial.log" 2>&1 &
+          # Persist the child's real result for the later step; a dead process
+          # alone does not mean the trial succeeded.
+          (
+            set +e
+            sudo --preserve-env=RUNNER_TEMP,GH_TOKEN,GITHUB_REPOSITORY,GITHUB_REF_NAME,GITHUB_RUN_ID python3 -u -m scripts.egress_phone_trial
+            code=$?
+            printf '%s\n' "$code" > "$RUNNER_TEMP/nyx-phone-trial.exit.tmp"
+            mv "$RUNNER_TEMP/nyx-phone-trial.exit.tmp" "$RUNNER_TEMP/nyx-phone-trial.exit"
+            exit "$code"
+          ) > "$RUNNER_TEMP/nyx-phone-trial.log" 2>&1 &
           trial_pid=$!
           echo "$trial_pid" > "$RUNNER_TEMP/nyx-phone-trial.pid"
           for attempt in $(seq 1 120); do
@@ -64,7 +85,17 @@ jobs:
         run: |
           pid=$(cat "$RUNNER_TEMP/nyx-phone-trial.pid")
           for attempt in $(seq 1 280); do
-            if ! sudo -n kill -0 "$pid" 2>/dev/null; then cat "$RUNNER_TEMP/nyx-phone-trial.log"; exit 0; fi
+            if [ -f "$RUNNER_TEMP/nyx-phone-trial.exit" ]; then
+              cat "$RUNNER_TEMP/nyx-phone-trial.log"
+              if [ "$(cat "$RUNNER_TEMP/nyx-phone-trial.exit")" = 0 ]; then exit 0; fi
+              echo '::error::Private trial exited unsuccessfully'
+              exit 1
+            fi
+            if ! sudo -n kill -0 "$pid" 2>/dev/null; then
+              cat "$RUNNER_TEMP/nyx-phone-trial.log"
+              echo '::error::Private trial exited without a recorded result'
+              exit 1
+            fi
             sleep 10
           done
           sudo kill "$pid"

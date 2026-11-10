@@ -50,6 +50,16 @@ route callback, strict route/country/UDP/drop checks, and no handoff publication
 Its workflow is deliberately commit-gated; it never self-chains or retries an old
 session. Successful diagnostics do not register a production pool.
 
+The separately gated personal phone-trial workflow now extracts exactly one
+explicit country from a commit marker of the form `[private-country-trial:KR]`
+(or another of the 30 targets), fetches only that country's fresh candidates,
+and fails closed rather than falling back. No such trial was started by this
+change. Because this remains a one-owner research tool with one encrypted
+handoff file, explicit trials serialize instead of cancelling an already-issued
+session. This is not a multi-user or permanent service; the recipient's private
+key must already be securely held by the owner. Logs and Git never contain
+plaintext provisioning.
+
 This does **not** finish a multi-country Android service. The earlier Japanese
 issued-route test and this Korean diagnostic occurred at different times, and no
 current concurrent JP/KR pools, durable free hosting, provider permission for a
@@ -61,5 +71,8 @@ After the diagnostic, backend verification
 [42851332383](https://github.com/asomethinggood-sys/My-small-project/actions/runs/42851332383)
 passed kernel, source and local-Psiphon jobs but failed the separate Xray download
 step with curl exit 22. The exact HTTP cause was not visible via the available log
-path. The diagnostic independently downloaded its pinned Xray and passed. A green
-diagnostic does not make the backend workflow green.
+path. The diagnostic independently downloaded its pinned Xray and passed. A
+subsequent backend verification
+[42851805898](https://github.com/asomethinggood-sys/My-small-project/actions/runs/42851805898)
+passed all four applicable jobs. A green diagnostic or backend workflow does not
+establish a running public service.

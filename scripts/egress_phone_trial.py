@@ -38,7 +38,7 @@ def trial(namespace, upstream, initial, *, acceptance_only=False):
             or country != initial.get('advertised_country')
             or provider not in ('vpnbook', 'vpngate') or not initial.get('country_verified')):
         raise ProbeError('trial_requires_verified_identity')
-    # The legacy pool ID is opaque; availability and leases use verified country.
+    # Availability and leases use the verified country, never the pool ID.
     # Positive/negative/positive controls before making the pool selectable.
     upstream.send_signal(signal.SIGSTOP)
     try:
@@ -78,13 +78,13 @@ def trial(namespace, upstream, initial, *, acceptance_only=False):
         sessions=Sessions(max_pools=1)
         # Explicitly scoped to this one owner's personal acceptance test. This
         # is not an approval to redistribute the provider to multiple users.
-        sessions.register('personal-de',country,provider,'openvpn',True)
-        plane=LocalIngressPlane({'personal-de':('198.19.250.2',18888)},max_leases=4)
+        sessions.register('personal-pool',country,provider,'openvpn',True)
+        plane=LocalIngressPlane({'personal-pool':('198.19.250.2',18888)},max_leases=4)
         key=secrets.token_urlsafe(32);owner='phone_trial'
         # Separate internal diagnostics quota must not consume phone renewal slots.
         diagnostic_key=secrets.token_urlsafe(32)
         controller=Controller(sessions,plane,{owner:key,'route_diagnostic':diagnostic_key})
-        gateway=Gateway(controller,'trial.invalid',{'personal-de':(identity,path)})
+        gateway=Gateway(controller,'trial.invalid',{'personal-pool':(identity,path)})
         threading.Thread(target=gateway.serve_forever,daemon=True).start()
         route_ready=False
         route_report={}
@@ -93,7 +93,7 @@ def trial(namespace, upstream, initial, *, acceptance_only=False):
             initial['issued_route_evidence']=report
             print('::notice title=Phone-path exit evidence::'+json.dumps(report),flush=True)
             if not report['country_verified'] or report.get('udp_dns_passed') is not True:
-                controller.pool_failed('personal-de')
+                controller.pool_failed('personal-pool')
                 raise ProbeError('issued_route_country_mismatch')
             route_report.clear();route_report.update(report)
             return Evidence(country,True,True,True,True,True,time.monotonic()+150)
@@ -122,7 +122,7 @@ def trial(namespace, upstream, initial, *, acceptance_only=False):
                 observations[4] = conflict_lookup(measured['exit_ipv4'])
             if not assess_responses(observations, country, require_conflict_source=True)['country_verified']:raise ProbeError('exit_not_verified')
             return Evidence(country,True,True,True,True,True,time.monotonic()+90)
-        supervisor=Supervisor(controller,{'personal-de':health},interval=45,timeout=40)
+        supervisor=Supervisor(controller,{'personal-pool':health},interval=45,timeout=40)
         cf_log=temporary/'connector.log'
         with cf_log.open('w') as log:
             children.append(subprocess.Popen([str(ROOT/'.runtime/bin/cloudflared'),'tunnel','--no-autoupdate','--url',f'http://127.0.0.1:{gateway.server_address[1]}'],stdout=log,stderr=subprocess.STDOUT))
@@ -130,7 +130,7 @@ def trial(namespace, upstream, initial, *, acceptance_only=False):
         while time.monotonic()<deadline:
             supervisor.tick()
             match=re.search(r'https://([a-z0-9-]+\.trycloudflare\.com)',cf_log.read_text())
-            if match and sessions.pools['personal-de']['ready']:break
+            if match and sessions.pools['personal-pool']['ready']:break
             if any(child.poll() is not None for child in children):raise ProbeError('trial_start_failed')
             time.sleep(.25)
         else:raise ProbeError('verified_trial_not_ready')
@@ -166,7 +166,7 @@ def trial(namespace, upstream, initial, *, acceptance_only=False):
         end=time.monotonic()+duration
         while time.monotonic()<end:
             supervisor.tick()
-            if not sessions.pools['personal-de']['ready']:
+            if not sessions.pools['personal-pool']['ready']:
                 raise ProbeError('private_trial_health_failed_closed')
             if upstream.poll() is not None or any(child.poll() is not None for child in children):
                 raise ProbeError('private_trial_component_stopped')
