@@ -27,12 +27,15 @@ jobs:
       - uses: actions/checkout@v4
       - name: Test provider parsers
         run: python3 -m unittest discover -s tests -p 'test_egress_*inventory.py' -v && python3 -m unittest discover -s tests -p 'test_egress_vpnjantit.py' -v && python3 -m unittest discover -s tests -p 'test_egress_refresh.py' -v && python3 -m unittest discover -s tests -p 'test_egress_path_probe.py' -v
-      - name: Inspect one snapshot per provider without creating accounts
+      - name: Exercise two bounded refresh cycles without creating accounts
         id: discovery
         continue-on-error: true
         run: |
           status=0
-          timeout 70s python3 -m scripts.egress_refresh --once --output .runtime/egress/jantit-catalog.json || status=$?
+          timeout 140s python3 -m scripts.egress_refresh --interval 60 --duration 65 --output .runtime/egress/jantit-catalog.json | tee "$RUNNER_TEMP/nyx-refresh.log" || status=$?
+          attempts=$(grep -c '^catalog refresh:' "$RUNNER_TEMP/nyx-refresh.log" || true)
+          echo "::notice title=Refresh cycles::$attempts bounded cycles attempted"
+          if [ "$attempts" != 2 ]; then status=1; fi
           if [ -f .runtime/egress/jantit-catalog.json ]; then
             python3 - <<'PY'
           import json
