@@ -23,10 +23,37 @@ jobs:
   directory:
     runs-on: ubuntu-24.04
     timeout-minutes: 5
+    permissions:
+      contents: read
+      actions: write
     steps:
       - uses: actions/checkout@v4
       - name: Test provider parsers
         run: python3 -m unittest discover -s tests -p 'test_egress_*inventory.py' -v && python3 -m unittest discover -s tests -p 'test_egress_vpnjantit.py' -v && python3 -m unittest discover -s tests -p 'test_egress_refresh.py' -v && python3 -m unittest discover -s tests -p 'test_egress_path_probe.py' -v
+      - name: Start one successor refresh before this workflow finishes
+        if: github.event_name == 'push' && contains(github.event.head_commit.message, '[bounded-refresh-handoff]')
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+        run: |
+          set -euo pipefail
+          test "$GITHUB_REF_NAME" = 'arena/a78a10a4-my-small-project'
+          [[ "$GITHUB_RUN_ID" =~ ^[0-9]+$ ]]
+          # vpn.yml exists on main and its branch version runs only a bounded refresh.
+          # One dispatch, no authorization retries, no other branch.
+          gh workflow run vpn.yml --ref "$GITHUB_REF_NAME" -f parent_run="$GITHUB_RUN_ID"
+          for attempt in $(seq 1 30); do
+            child=$(gh run list --workflow vpn.yml --branch "$GITHUB_REF_NAME" \
+              --limit 30 --json databaseId,status,headSha,displayTitle,event \
+              --jq ".[] | select(.event == \"workflow_dispatch\" and .displayTitle == \"Bounded handoff $GITHUB_RUN_ID\" and .headSha == \"$GITHUB_SHA\" and (.status == \"in_progress\" or .status == \"completed\")) | .databaseId" | head -n 1)
+            if [ -n "$child" ]; then
+              echo "::notice title=Refresh successor::Run $child started before parent $GITHUB_RUN_ID completed; successor refreshes metadata once."
+              exit 0
+            fi
+            sleep 3
+          done
+          echo '::error::Successor did not start within the bounded observation window.'
+          exit 1
       - name: Exercise two bounded refresh cycles without creating accounts
         id: discovery
         continue-on-error: true
