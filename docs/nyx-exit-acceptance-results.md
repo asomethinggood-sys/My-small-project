@@ -33,6 +33,16 @@ The bounded VPN Gate review **42750758966** inspected up to five configurations 
 
 No untrusted configuration was executed, no profile/private key was published, and the cryptographic policy was not weakened to force availability. Provider coverage beyond the verified adapter paths remains incomplete.
 
+### Subsequent AEAD-only inspection and live test
+
+Review **42828928713** accepted twelve sampled profiles for AEAD-only experimentation (five JP, five KR, two AU), after normalizing inline PEM whitespace. These were configuration candidates, not verified exits.
+
+The new `egress_vpngate` adapter reads the official directory, deduplicates public endpoints, binds each sanitized endpoint to its directory IP, rejects interactive credentials, and tests at most three candidates. It does not publish a phone service. The explicit experimental cipher policy pins both negotiated and non-negotiated data channels to AES-128-GCM. `data-ciphers-fallback AES-128-GCM` supports peers without negotiation; it does **not** permit CBC or SHA1 data protection. TLS 1.2 minimum and server-certificate verification remain mandatory. Default sanitizer behavior still rejects SHA1 hints; experimental mode replaces that data-MAC hint only without a tls-auth block.
+
+Live workflow **42829732452**, job **129876333704**, tested three advertised JP candidates. One returned `authentication_rejected`; two returned `connection_not_established`, all at the authentication stage. **Zero tunnels or country exits were verified.** All three reported unchanged host main routes. The workflow's successful completion means the bounded experiment ran, not that a VPN connection worked. No settings or keys were published.
+
+The local suite now passes **139 tests**, including endpoint binding, target filtering, deduplication, bounded candidate limits, credential rejection, and pinned-GCM configuration. The VPNGate connection path remains experimentally unsuccessful; phone integration is not enabled. Successful future namespace probes would still need issued-route acceptance before any phone handoff.
+
 ## Current delivery status
 
 The incorrect verified-country claim is now rejected. There is currently **no newly accepted German phone endpoint** to deliver. Full multi-country service, stable production signing and sustained deployment are not complete. Workflow ownership is not the blocker demonstrated here: upstream country evidence and compatible available pools are. No permanent hosted-runner loop, automatic trial renewal, PR, main-branch change or replacement release was made.

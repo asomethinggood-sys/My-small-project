@@ -1,4 +1,4 @@
-"""One bounded private VPNBook OpenVPN experiment; never a shared proxy service.
+"""Bounded private VPNBook/VPNGate experiments; never a shared proxy service.
 
 Encrypted OpenVPN socket stays on the host. A host-opened TUN fd is moved to a
 firewalled namespace after authentication. No host addresses/routes are assigned.
@@ -358,6 +358,8 @@ def probe(envelope, metadata_fetcher=None, *, private_trial=None):
     result['host_main_routes_unchanged'] = baselines == [run('ip', '-j', family, 'route', 'show', 'table', 'main') for family in ['-4', '-6']]
     if not result['host_main_routes_unchanged']:
         result.update(status='host_route_change_detected', country_verified=False)
+    if not result.get('country_verified'):
+        result['verified_country'] = None
     return result
 
 
