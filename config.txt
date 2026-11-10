@@ -1,1 +1,1 @@
-vless://710e5d46-a1fb-43e2-b864-703fc431cf64@clark-recent-listen-take.trycloudflare.com:443?encryption=none&security=tls&sni=clark-recent-listen-take.trycloudflare.com&type=ws&host=clark-recent-listen-take.trycloudflare.com&path=%2Fe340bde4618d451486ce45cec4b384ca#ArenaVPN
+vless://1f33bbcc-962b-46d6-a7f4-1ba78aa4e49c@tabs-superb-linda-break.trycloudflare.com:443?encryption=none&security=tls&sni=tabs-superb-linda-break.trycloudflare.com&type=ws&host=tabs-superb-linda-break.trycloudflare.com&path=%2F67cf151d16104a08b2361edcfe2c900d#ArenaVPN
