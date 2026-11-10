@@ -18,6 +18,7 @@ from urllib.parse import urlsplit, parse_qs
 import uuid
 
 from scripts.egress_openvpn_probe import assess_responses
+from scripts.egress_config import global_ip
 
 
 class NoRedirect(urllib.request.HTTPRedirectHandler):
@@ -91,6 +92,25 @@ def await_service(service, user, key, country, cancel):
         cancel.wait(2)
 
 
+def conflict_lookup(exit_ip):
+    """Query geography for the measured tunnel IP, never the runner's own IP.
+
+    This is metadata, not a payload-path probe. Explicit address binding lets
+    the lookup avoid shared-exit API throttling without misidentifying the exit.
+    """
+    address=global_ip(exit_ip)
+    if address.version!=4:raise ValueError('Measured IPv4 exit required')
+    url='https://api.country.is/'+str(address)
+    with urllib.request.build_opener(NoRedirect()).open(url,timeout=8) as response:
+        data=response.read(32769)
+        if len(data)>32768:raise ValueError('Oversized country lookup')
+        value=json.loads(data)
+    if (not isinstance(value,dict) or str(global_ip(value.get('ip','')))!=str(address)
+            or not re.fullmatch('[A-Z]{2}',str(value.get('country','')))):
+        raise ValueError('Country lookup does not match the measured exit')
+    return {'ip':str(address),'country':value['country']}
+
+
 def exact(stream, size):
     data=b''
     while len(data)<size:
@@ -144,7 +164,7 @@ def probe(service, user, key, country, xray, cancel):
             # before app traffic. Establish/measure that path before UDP.
             stage='issued_route_https_geography'
             observations={};timings={}
-            urls=['https://api.ipify.org?format=json','https://ifconfig.co/json','https://ipwho.is/','https://ipinfo.io/json','https://api.country.is/']
+            urls=['https://api.ipify.org?format=json','https://ifconfig.co/json','https://ipwho.is/','https://ipinfo.io/json']
             for index,url in enumerate(urls):
                 if cancel.is_set():raise ValueError('Probe cancelled')
                 began=time.monotonic()
@@ -156,8 +176,12 @@ def probe(service, user, key, country, xray, cancel):
                         if isinstance(value,dict) and isinstance(value.get('ip'),str):observations[index]=value
                         timings[str(index)]=round((time.monotonic()-began)*1000)
                     except ValueError:pass
+            measured=assess_responses(observations, expected_country=country)
+            if measured['independent_ip_agreement']:
+                stage='explicit_exit_country_lookup'
+                observations[4]=conflict_lookup(measured['exit_ipv4'])
             assessment=assess_responses(observations, expected_country=country, require_conflict_source=True)
-            assessment.update(path='issued_tls_gateway_route',udp_dns_passed=False,runner_https_ms=timings)
+            assessment.update(path='issued_tls_gateway_route',conflict_lookup_scope='explicit_measured_exit_ip',udp_dns_passed=False,runner_https_ms=timings)
             print('::notice title=Issued-route TCP evidence::'+json.dumps(assessment),flush=True)
             if not assessment['country_verified']:
                 return assessment

@@ -2,7 +2,7 @@ import copy
 import unittest
 from unittest.mock import patch, MagicMock
 import urllib.error
-from scripts.egress_path_probe import client_config, request, await_service
+from scripts.egress_path_probe import client_config, request, await_service, conflict_lookup
 from scripts.egress_openvpn_probe import assess_responses
 
 
@@ -59,6 +59,21 @@ class IssuedPathTests(unittest.TestCase):
         self.assertFalse(result['country_verified'])
         self.assertIsNone(result['verified_country'])
         self.assertEqual(result['exit_ipv4'],'8.8.4.4')
+
+    def test_metadata_lookup_is_bound_to_measured_exit_not_runner_ip(self):
+        with patch('urllib.request.build_opener') as opener:
+            response=opener.return_value.open.return_value.__enter__.return_value
+            response.read.return_value=b'{"ip":"51.75.145.20","country":"DE"}'
+            self.assertEqual(conflict_lookup('51.75.145.20'),{'ip':'51.75.145.20','country':'DE'})
+            self.assertEqual(opener.return_value.open.call_args.args[0],'https://api.country.is/51.75.145.20')
+            response.read.return_value=b'{"ip":"8.8.8.8","country":"DE"}'
+            with self.assertRaises(ValueError):conflict_lookup('51.75.145.20')
+
+    def test_private_or_malformed_exit_cannot_choose_lookup_url(self):
+        with patch('urllib.request.build_opener') as opener:
+            for address in ['127.0.0.1','169.254.169.254','evil.example/path']:
+                with self.assertRaises(ValueError):conflict_lookup(address)
+            opener.assert_not_called()
 
     def test_reported_france_source_is_required_and_has_veto(self):
         observations={1:{'ip':'51.75.145.220','country_iso':'DE'},
