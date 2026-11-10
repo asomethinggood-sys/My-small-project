@@ -3,6 +3,9 @@ name: Legacy VPN Loop (disabled on development branch)
 # publishes plaintext credentials and force-pushes another branch. Do not run
 # that behavior from this development branch.
 on:
+  push:
+    branches: [arena/a78a10a4-my-small-project]
+    paths: [.github/workflows/vpn.yml]
   workflow_dispatch:
 permissions:
   contents: read

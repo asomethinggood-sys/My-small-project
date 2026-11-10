@@ -15,4 +15,22 @@ jobs:
       - name: Unit-test bounded snapshot accounting
         run: python3 -m unittest discover -s tests -p 'test_egress_vpngate_inventory.py' -v
       - name: Inspect one official snapshot (no connection or profile publication)
-        run: timeout 60s python3 -m scripts.egress_vpngate_inventory --live
+        run: |
+          timeout 60s python3 -m scripts.egress_vpngate_inventory --live > inventory.json
+          python3 - <<'PY'
+          import json
+          from pathlib import Path
+          report = json.loads(Path('inventory.json').read_text())
+          print('::notice title=Snapshot scope::One partial directory response; no connection or UDP capability test')
+          for country, counts in report['countries'].items():
+              if counts['advertised_unique_ingress_ips']:
+                  tcp = counts['accepted_profiles']['tcp']
+                  udp = counts['accepted_profiles']['udp']
+                  print(f"::notice title=Snapshot {country}::{counts['advertised_unique_ingress_ips']} unique advertised ingress IPs; {counts['inspected_unique_ingress_ips']} inspected; {tcp} TCP and {udp} UDP profiles accepted; {counts['rejected_profiles']} rejected; zero verified exits")
+          print(Path('inventory.json').read_text())
+          PY
+      - uses: actions/upload-artifact@v4
+        with:
+          name: vpngate-snapshot-${{ github.run_id }}
+          retention-days: 3
+          path: inventory.json

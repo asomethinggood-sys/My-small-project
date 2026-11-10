@@ -3,6 +3,9 @@ name: Tunnel transport experiment (disabled)
 # It must not auto-start on a source push or publish credentials. A replacement
 # must use private provisioning and be deliberately reviewed before enabling.
 on:
+  push:
+    branches: [arena/a78a10a4-my-small-project]
+    paths: [.github/workflows/experiment.yml]
   workflow_dispatch:
 permissions:
   contents: read
