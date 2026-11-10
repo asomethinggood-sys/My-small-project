@@ -1,18 +1,65 @@
 name: Legacy VPN Loop (disabled on development branch)
-# The original main-branch loop is not changed by this file. It self-chains,
-# publishes plaintext credentials and force-pushes another branch. Do not run
-# that behavior from this development branch.
+# main's historical VPN loop remains untouched. This branch permits only a
+# one-successor Actions handoff diagnostic: no tunnel, service, or self-loop.
+run-name: Bounded handoff ${{ inputs.parent_run || 'starter' }}
 on:
   push:
     branches: [arena/a78a10a4-my-small-project]
     paths: [.github/workflows/vpn.yml]
   workflow_dispatch:
+    inputs:
+      parent_run:
+        description: Parent run identifier for a finite handoff test
+        required: false
+        type: string
 permissions:
   contents: read
 jobs:
   disabled:
-    runs-on: ubuntu-latest
-    timeout-minutes: 1
+    if: github.event_name != 'push' || !contains(github.event.head_commit.message, '[bounded-handoff-test]')
+    runs-on: ubuntu-24.04
+    timeout-minutes: 2
     steps:
-      - run: |
-          echo 'Disabled on this branch: no tunnel or self-chaining run started.'
+      - name: Validate bounded successor without issuing another dispatch
+        env:
+          PARENT_RUN: ${{ inputs.parent_run }}
+          EVENT_NAME: ${{ github.event_name }}
+        run: |
+          set -euo pipefail
+          if [ "$EVENT_NAME" = workflow_dispatch ] && [ -n "$PARENT_RUN" ]; then
+            [[ "$PARENT_RUN" =~ ^[0-9]{1,20}$ ]] || exit 1
+            echo "::notice title=Bounded successor::Started for parent $PARENT_RUN; no tunnel or further dispatch"
+            sleep 20
+          else
+            echo 'Disabled on this branch: no tunnel or self-chaining run started.'
+          fi
+  handoff-test:
+    if: github.event_name == 'push' && contains(github.event.head_commit.message, '[bounded-handoff-test]')
+    runs-on: ubuntu-24.04
+    timeout-minutes: 4
+    permissions:
+      contents: read
+      actions: write
+    steps:
+      - name: Start one successor on this branch, then observe it before parent exit
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+        run: |
+          set -euo pipefail
+          test "$GITHUB_REF_NAME" = 'arena/a78a10a4-my-small-project'
+          [[ "$GITHUB_RUN_ID" =~ ^[0-9]+$ ]]
+          # Exactly one dispatch. Do not retry a denied request, and never target main.
+          gh workflow run vpn.yml --ref "$GITHUB_REF_NAME" -f parent_run="$GITHUB_RUN_ID"
+          for attempt in $(seq 1 30); do
+            child=$(gh run list --workflow vpn.yml --branch "$GITHUB_REF_NAME" \
+              --limit 30 --json databaseId,status,headSha,displayTitle,event \
+              --jq ".[] | select(.event == \"workflow_dispatch\" and .displayTitle == \"Bounded handoff $GITHUB_RUN_ID\" and .headSha == \"$GITHUB_SHA\" and (.status == \"in_progress\" or .status == \"completed\")) | .databaseId" | head -n 1)
+            if [ -n "$child" ]; then
+              echo "::notice title=Bounded handoff::Successor run $child started before parent $GITHUB_RUN_ID completed; no tunnel and no recurring chain."
+              exit 0
+            fi
+            sleep 3
+          done
+          echo '::error::Dispatched successor was not observed within 90 seconds.'
+          exit 1
