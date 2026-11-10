@@ -22,12 +22,13 @@ class IssuedRouteAcceptanceTests(unittest.TestCase):
         seen = []
         def fake_trial(ns, upstream, initial, *, acceptance_only):
             self.assertTrue(acceptance_only)
-            initial['issued_route_evidence'] = {'country_verified': True, 'udp_dns_passed': True}
+            initial['issued_route_evidence'] = {'verified_country': 'KR', 'country_verified': True, 'udp_dns_passed': True}
         def fake_probe(envelope, *, private_trial):
             seen.append(envelope['country'])
             if len(seen) == 1:
                 return {'country_verified': False, 'failed_stage': 'authenticate'}
-            result = {'country_verified': True, 'host_main_routes_unchanged': True, 'tunnel_drop_blocked': True}
+            result = {'advertised_country': 'KR', 'verified_country': 'KR', 'country_verified': True,
+                      'host_main_routes_unchanged': True, 'tunnel_drop_blocked': True}
             private_trial('fake', None, result)
             return result
         output = io.StringIO()
@@ -48,6 +49,16 @@ class IssuedRouteAcceptanceTests(unittest.TestCase):
             result = run_snapshot('KR', self.text, run_probe=fake_probe)
         self.assertEqual(len(count), 1)
         self.assertFalse(result['issued_route_passed'])
+
+    def test_mismatched_route_country_is_rejected(self):
+        def fake_probe(envelope, *, private_trial):
+            result = {'advertised_country': 'KR', 'verified_country': 'KR', 'country_verified': True,
+                      'host_main_routes_unchanged': True, 'tunnel_drop_blocked': True}
+            private_trial('fake', None, result)
+            result['issued_route_evidence'] = {'verified_country': 'JP', 'country_verified': True, 'udp_dns_passed': True}
+            return result
+        with patch('scripts.egress_route_acceptance.trial'), contextlib.redirect_stdout(io.StringIO()):
+            self.assertFalse(run_snapshot('KR', self.text, run_probe=fake_probe)['issued_route_passed'])
 
     def test_no_directory_candidates_or_unknown_target(self):
         with contextlib.redirect_stdout(io.StringIO()):

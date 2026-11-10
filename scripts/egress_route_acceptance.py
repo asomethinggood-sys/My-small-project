@@ -32,9 +32,12 @@ def test_snapshot(country, text, *, run_probe=probe):
         report = run_probe(envelope, private_trial=acceptance)
         outcome['candidates_tested'] += 1
         route = report.get('issued_route_evidence', {})
-        outcome['issued_route_passed'] = (report.get('country_verified') is True
+        outcome['issued_route_passed'] = (report.get('advertised_country') == country
+            and report.get('verified_country') == country
+            and report.get('country_verified') is True
             and report.get('host_main_routes_unchanged') is True
             and report.get('tunnel_drop_blocked') is True
+            and route.get('verified_country') == country
             and route.get('country_verified') is True
             and route.get('udp_dns_passed') is True)
         # This report contains only the probe's allowlisted metadata, never the
