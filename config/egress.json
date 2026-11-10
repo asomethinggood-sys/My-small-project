@@ -6,7 +6,8 @@
     {"id": "vpngate", "discovery": "public_csv", "shared_use_approved": false, "blocker": "Volunteer logging disclosure and shared-use review required; live country availability unknown."},
     {"id": "vpnjantit", "discovery": "official_page", "shared_use_approved": false, "blocker": "Personal account provisioning, country verification and shared-use permission required."},
     {"id": "vpnbook", "discovery": "official_page_and_browser_probe", "shared_use_approved": false, "blocker": "German OpenVPN bounded probe passed; personal-use policy still requires permission before public sharing."},
-    {"id": "proton", "discovery": "not_implemented", "shared_use_approved": false, "blocker": "Account, country entitlement and sharing permission required."},
+    {"id": "psiphon", "discovery": "not_implemented", "shared_use_approved": false, "blocker": "Service license limits access to official Psiphon clients; country and UDP support unverified."},
+    {"id": "proton", "discovery": "bounded_public_probe_http_error", "shared_use_approved": false, "blocker": "Unauthenticated directory request failed; account, country entitlement and sharing permission required."},
     {"id": "riseup", "discovery": "not_implemented", "shared_use_approved": false, "blocker": "Country selection and shared-use permission unverified."},
     {"id": "warp", "discovery": "not_implemented", "shared_use_approved": false, "blocker": "No supported arbitrary-country selector established."},
     {"id": "tor", "discovery": "not_implemented", "shared_use_approved": false, "blocker": "TCP-only alternative; not a full-traffic country VPN adapter."}

@@ -58,7 +58,27 @@ class JantitTests(unittest.TestCase):
             self.assertEqual(country['discovered_providers'], 2)
             self.assertFalse(country['selectable'])
             self.assertEqual(country['verified_servers'], 0)
-            self.assertEqual(next(e for e in country['exits'] if e['provider'] == 'vpnjantit')['advertised_endpoints'], 1)
+            entry = next(e for e in country['exits'] if e['provider'] == 'vpnjantit')
+            self.assertEqual(entry['advertised_endpoints'], 1)
+            self.assertEqual(entry['advertised_tcp_and_udp_servers'], 1)
+            self.assertEqual(country['advertised_tcp_and_udp_servers'], 1)
+
+    def test_independent_failure_keeps_other_provider_and_nonzero_status(self):
+        import tempfile
+        from pathlib import Path
+        from unittest.mock import patch
+        from scripts import egress_catalog
+        with tempfile.TemporaryDirectory() as root:
+            output = Path(root) / 'out.json'
+            with patch('sys.argv', ['catalog', '--live', '--vpnjantit-live', '--output', str(output)]), \
+                 patch('scripts.egress_catalog.fetch_directory', side_effect=OSError('not logged')), \
+                 patch('scripts.egress_vpnjantit.fetch_directory', return_value=card('Germany', 'gr1')):
+                self.assertEqual(egress_catalog.main(), 1)
+            data = json.loads(output.read_text())
+            self.assertEqual([s['status'] for s in data['sources']], ['fetch_or_parse_failed', 'fetched'])
+            self.assertEqual(len(data['observations']), 1)
+            self.assertFalse(any(country['selectable'] for country in data['countries']))
+            self.assertNotIn('not logged', output.read_text())
 
     def test_page_status_is_not_verification(self):
         item = parse_directory(card('Germany', 'gr1', state='Offline', transports='TCP'), {'DE'})[0]

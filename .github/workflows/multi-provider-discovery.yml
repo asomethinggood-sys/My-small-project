@@ -17,28 +17,31 @@ jobs:
       - uses: actions/checkout@v4
       - name: Test provider parsers
         run: python3 -m unittest discover -s tests -p 'test_egress_*inventory.py' -v && python3 -m unittest discover -s tests -p 'test_egress_vpnjantit.py' -v
-      - name: Inspect one VPN Jantit OpenVPN page without creating accounts
-        id: jantit
+      - name: Inspect one snapshot per provider without creating accounts
+        id: discovery
         continue-on-error: true
         run: |
-          timeout 60s python3 -m scripts.egress_catalog --vpnjantit-live --output .runtime/egress/jantit-catalog.json
-          python3 - <<'PY'
+          status=0
+          timeout 60s python3 -m scripts.egress_catalog --live --vpnjantit-live --output .runtime/egress/jantit-catalog.json || status=$?
+          if [ -f .runtime/egress/jantit-catalog.json ]; then
+            python3 - <<'PY'
           import json
+          from collections import Counter
           from pathlib import Path
           c=json.loads(Path('.runtime/egress/jantit-catalog.json').read_text())
-          for r in c['countries']:
-              if r['discovered_servers']:
-                  print('::notice title=VPN Jantit snapshot '+r['country']+'::'+str(r['discovered_servers'])+' unique advertised OpenVPN hosts; zero verified exits')
-          print('::notice title=VPN Jantit total::'+str(len(c['observations']))+' unique target-country hosts; not verified or usable')
+          print('::notice title=Source status::'+json.dumps(c['sources']))
+          for provider in ('vpngate','vpnjantit'):
+              rows=[r for r in c['observations'] if r['provider']==provider]
+              counts=dict(Counter(r['country'] for r in rows))
+              print(f'::notice title={provider} snapshot::{len(rows)} distinct provider endpoints in {len(counts)} target countries; {sum(r.get("advertised_tcp_udp",False) for r in rows)} claim TCP and UDP; none verified; '+json.dumps(counts,sort_keys=True))
           PY
+          fi
+          exit "$status"
       - uses: actions/upload-artifact@v4
         with:
           name: vpnjantit-catalog-${{ github.run_id }}
           path: .runtime/egress/jantit-catalog.json
           retention-days: 3
-      - name: Inspect one Proton directory response without credentials
-        continue-on-error: true
-        run: timeout 60s python3 -m scripts.egress_proton_inventory
-      - name: Mark VPN Jantit discovery failure
-        if: steps.jantit.outcome == 'failure'
+      - name: Mark partial discovery failure
+        if: steps.discovery.outcome == 'failure'
         run: exit 1

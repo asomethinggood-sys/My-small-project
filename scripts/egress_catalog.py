@@ -145,9 +145,16 @@ def attach_advertisements(catalog, source_report):
         candidates = [item for item in advertised if item[0] == row['country']]
         row['advertised_endpoints'] = len({(item[1], item[3]) for item in candidates})
         row['advertised_providers'] = len({item[1] for item in candidates})
+        # Count only explicit provider claims; never imply TCP/UDP was tested.
+        claimed = [item for item in catalog.get('observations', [])
+                   if item['country'] == row['country'] and item.get('advertised_tcp_udp') is True]
+        row['advertised_tcp_and_udp_servers'] = len({(item['provider'], item['id']) for item in claimed})
         for entry in row.get('exits', []):
             entry['advertised_endpoints'] = len({item[3] for item in candidates
                                                  if item[1] == entry['provider'] and item[2] == entry['type']})
+            entry['advertised_tcp_and_udp_servers'] = len({item['id'] for item in claimed
+                                                            if item['provider'] == entry['provider']
+                                                            and item['protocol'] == entry['type']})
     return catalog
 
 
