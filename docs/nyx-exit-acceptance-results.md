@@ -56,8 +56,14 @@ Workflow **42832808690**, job **129887022861**, tested three JP candidates. One 
 | 219.100.37.240 | JP / JP / JP | passed | passed | unchanged |
 | 219.100.37.239 | JP / JP / JP | passed | passed | unchanged |
 
-These are **namespace verification results**, not phone or production availability. A bounded phone-path trial for the explicitly selected .239 official directory candidate is being evaluated separately in **42833374807**. The phone supervisor now binds availability, evidence, issued-route tests, and encrypted provisioning to the verified country/provider instead of hardcoding Germany. A missing selected directory endpoint fails closed; there is no automatic candidate rotation. Local tests: **142 passed**.
+These were initially **namespace verification results**, not phone or production availability. Acquisition trials **42833374807** and **42833743583** failed before connection: an exit address is not necessarily a directory ingress, and a previously observed ingress can disappear from a subsequent directory snapshot.
+
+The phone supervisor now binds availability, evidence, issued-route tests, and encrypted provisioning to the verified country/provider instead of hardcoding Germany. Startup takes at most three deduplicated candidates from one fresh official snapshot, all for the same selected country. It never rotates an already-issued phone session, never changes country on failure, and stops if the phone callback fails. Server-pushed `auth` overrides are rejected so SHA256 cannot silently become SHA1. Local tests: **143 passed**.
+
+### Issued phone route accepted
+
+Trial **42834620957**, startup job **129893430866**, passed startup and published only encrypted provisioning. Decrypted acceptance metadata reports exit **219.100.37.240**, country **JP**, and observations **JP / JP / JP**. Handoff is gated on the real authenticated TLS/VLESS/WebSocket route, matching explicit-IP geography, and successful UDP DNS. The private settings were delivered through the workspace viewer, not committed or printed in logs. The runtime cutoff is 45 minutes after successful issuance; this does not imply permanent service or phone-measured latency improvement. Ongoing health still terminates the trial on failure.
 
 ## Current delivery status
 
-The incorrect verified-country claim is now rejected. There is currently **no newly accepted German phone endpoint** to deliver. Full multi-country service, stable production signing and sustained deployment are not complete. Workflow ownership is not the blocker demonstrated here: upstream country evidence and compatible available pools are. No permanent hosted-runner loop, automatic trial renewal, PR, main-branch change or replacement release was made.
+The incorrect verified-country claim is now rejected. There is currently **no newly accepted German phone endpoint** to deliver. Full multi-country service, stable production signing and sustained deployment are not complete. A Japanese issued route is now accepted for the bounded personal trial above; this does not validate Germany or the other catalog targets. Workflow ownership is not the blocker demonstrated here: upstream country evidence, compatible available pools, and a sustained deployment remain unresolved. No permanent hosted-runner loop, automatic trial renewal, PR, main-branch change or replacement release was made.

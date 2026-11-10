@@ -29,8 +29,6 @@ jobs:
           bash scripts/download-binaries.sh .runtime/bin --xray-only
           curl -fL --retry 2 --max-time 90 https://github.com/cloudflare/cloudflared/releases/download/2026.2.0/cloudflared-linux-amd64 -o .runtime/bin/cloudflared
           chmod 755 .runtime/bin/cloudflared
-          npm install --prefix .runtime/browser --no-audit --no-fund playwright@1.56.1
-          .runtime/browser/node_modules/.bin/playwright install --with-deps chromium
       - name: Acquire explicitly selected official Japanese candidate
         run: |
           timeout 60s python3 - <<'PY'
