@@ -111,11 +111,17 @@ compiled and tested the changed interface; its build and API 26, 35, 35/16 KB,
 and 36 compatibility jobs passed. API 29 installed, reinstalled and launched the
 exact universal APK, but UI Automator repeatedly failed to obtain an idle tree;
 the overall run failed. A subsequent change avoids setting identical TextView
-contents every second, a possible source of repeated accessibility events; that
-hypothesis requires a new complete run. The candidate in that run measured
-41,447,799 bytes ARM64 and 143,849,094 bytes universal, with an ephemeral release
-signer. No physical POCO result or stable signer is established; never commit
-signing keys or credentials.
+contents every second, a possible source of repeated accessibility events.
+The full follow-up [run 42844019946](https://github.com/asomethinggood-sys/My-small-project/actions/runs/42844019946)
+passed the build and all five compatibility jobs, including API 29, although this
+does not conclusively establish the earlier timeout's cause. The follow-up ARM64
+candidate measured 41,447,805 bytes (SHA-256
+`5e95a07f2b86a8253319547173c10eb428059f835a8f7c9a9427dd9698050465`);
+the universal candidate measured 143,849,100 bytes (SHA-256
+`937b5ce0f7d7168d79cc17c8f12ca5a57a76f24f954803038585350172ccc877`).
+Both use an ephemeral release signer. These are routing-incomplete CI candidates,
+not finished release APKs. No physical POCO result or stable signer is established;
+never commit signing keys or credentials.
 
 Local validation passed 153 Python tests and 13 Node tests. The bounded backend
 workflow [42841631088](https://github.com/asomethinggood-sys/My-small-project/actions/runs/42841631088)
