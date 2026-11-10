@@ -151,7 +151,11 @@ def sanitize(text, *, aead_only=False):
               'route-nopull', 'pull-filter ignore redirect-gateway',
               'pull-filter ignore dhcp-option', 'auth ' + digest[0], 'verb 3']
     if aead_only:
-        output.append('data-ciphers AES-256-GCM:AES-128-GCM:CHACHA20-POLY1305')
+        # SoftEther can support GCM without OpenVPN's cipher-negotiation
+        # extension. Both negotiated and non-negotiated peers are pinned to
+        # exactly the same AEAD cipher; there is no CBC/SHA1 data fallback.
+        output += ['cipher AES-128-GCM', 'data-ciphers AES-128-GCM',
+                   'data-ciphers-fallback AES-128-GCM']
     for name in (['key-direction'] if aead_only else ['cipher', 'data-ciphers', 'key-direction']):
         if name in values:
             output.append(name + ' ' + values[name][0])
@@ -162,4 +166,4 @@ def sanitize(text, *, aead_only=False):
     return {'config': '\n'.join(output) + '\n', 'endpoint_ip': str(address),
             'endpoint_port': int(remote[1]), 'transport': 'udp' if protocol[0].startswith('udp') else 'tcp',
             'credentials_required': 'auth-user-pass' in values,
-            'cipher_policy': 'aead_only_no_fallback' if aead_only else 'strict_profile'}
+            'cipher_policy': 'aead_only_pinned_gcm' if aead_only else 'strict_profile'}

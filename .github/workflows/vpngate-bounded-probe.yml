@@ -1,0 +1,17 @@
+name: Bounded VPNGate isolated connection test
+on:
+  push:
+    branches: [arena/f056ce38-my-small-project]
+    paths: [.github/workflows/vpngate-bounded-probe.yml, scripts/egress_vpngate.py]
+permissions:
+  contents: read
+jobs:
+  probe:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 8
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install isolated test dependencies
+        run: sudo apt-get update -qq && sudo apt-get install -y openvpn iproute2 iptables curl
+      - name: Test at most three official candidates without publishing a service
+        run: sudo timeout --signal=TERM --kill-after=10s 330s python3 -m scripts.egress_vpngate

@@ -54,6 +54,18 @@ def run(*argv, input=None, timeout=10):
 
 
 def prepare(envelope):
+    if envelope.get('provider') == 'vpngate':
+        if not re.fullmatch('[A-Z]{2}', str(envelope.get('country', ''))):
+            raise ValueError('Explicit advertised country required')
+        encoded = envelope.get('profile_base64', '')
+        if not isinstance(encoded, str) or len(encoded) > 180000:
+            raise ValueError('Configuration size rejected')
+        parsed = sanitize(base64.b64decode(encoded, validate=True).decode('utf-8-sig'), aead_only=True)
+        if parsed['endpoint_ip'] != str(global_ip(envelope.get('endpoint_ip', ''))):
+            raise ValueError('Directory endpoint mismatch')
+        if parsed['credentials_required']:
+            raise ValueError('Certificate-only candidate required')
+        return parsed
     if envelope.get('provider') != 'vpnbook' or envelope.get('username') != 'vpnbook':
         raise ValueError('Unsupported test provider')
     if not isinstance(envelope.get('password'), str) or not re.fullmatch('[A-Za-z0-9_-]{4,64}', envelope['password']):
@@ -181,7 +193,8 @@ def probe(envelope, metadata_fetcher=None, *, private_trial=None):
     parsed = prepare(envelope)
     token = uuid.uuid4().hex[:8]
     ns, device = 'nyxo-' + token, 'tun' + token
-    result = {'provider': 'vpnbook', 'advertised_country': 'DE', 'shared_service': False,
+    country = envelope.get('country', 'DE') if envelope['provider'] == 'vpngate' else 'DE'
+    result = {'provider': envelope['provider'], 'advertised_country': country, 'shared_service': False,
               'candidate_id': parsed.get('candidate_id', 'local-fixture-or-unspecified'),
               'endpoint_port': parsed['endpoint_port'],
               'status': 'not_connected', 'country_verified': False, 'connection_tested': True}
@@ -208,12 +221,16 @@ def probe(envelope, metadata_fetcher=None, *, private_trial=None):
             run('ip', 'netns', 'exec', ns, 'iptables-legacy-restore', input=ipv4)
             run('ip', 'netns', 'exec', ns, 'ip6tables-legacy-restore', input=ipv6)
             config, auth, management = directory / 'client.conf', directory / 'auth', directory / 'control'
-            for path, content in [(config, parsed['config']),
-                                  (auth, envelope['username'] + '\n' + envelope['password'] + '\n')]:
+            files = [(config, parsed['config'])]
+            auth_args = []
+            if envelope['provider'] == 'vpnbook':
+                files.append((auth, envelope['username'] + '\n' + envelope['password'] + '\n'))
+                auth_args = ['--auth-user-pass', str(auth)]
+            for path, content in files:
                 path.touch(mode=0o600)
                 path.write_text(content)
             command = ['openvpn', '--config', str(config), '--dev', device, '--dev-type', 'tun',
-                       '--disable-dco', '--auth-user-pass', str(auth), '--management', str(management), 'unix',
+                       '--disable-dco', *auth_args, '--management', str(management), 'unix',
                        '--log', str(log), '--connect-retry-max', '1', '--connect-timeout', '10',
                        '--auth-retry', 'none', '--remap-usr1', 'SIGTERM', '--allow-compression', 'no',
                        '--pull-filter', 'reject', 'comp-lzo', '--pull-filter', 'reject', 'compress']
@@ -265,7 +282,22 @@ def probe(envelope, metadata_fetcher=None, *, private_trial=None):
                     result['endpoint_probes'][stage] = 'passed'
                 except (ProbeError, ValueError) as error:
                     result['endpoint_probes'][stage] = str(error) if isinstance(error, ProbeError) else 'invalid_response'
-            result.update(assess_responses(results, require_conflict_source=private_trial is not None))
+            # Country.is implicit lookups have disagreed with explicit IP
+            # lookups. Bind this independent observation to the measured exit.
+            if envelope['provider'] == 'vpngate':
+                results.pop(4, None)
+                if 0 in results and metadata_fetcher is None:
+                    try:
+                        measured = str(global_ip(results[0]['ip']))
+                        body = json.loads(run('curl', '--fail', '--silent', '--max-time', '8',
+                                              '--max-filesize', '32768', '--proto', '=https',
+                                              'https://api.country.is/' + measured, timeout=10))
+                        if body.get('ip') == measured:
+                            results[4] = body
+                    except (ProbeError, ValueError, AttributeError):
+                        pass
+            result.update(assess_responses(results, country, require_conflict_source=(
+                private_trial is not None or envelope['provider'] == 'vpngate')))
             if private_trial is not None:
                 if metadata_fetcher is not None or not result.get('country_verified') or not result.get('udp_dns_passed'):
                     raise ProbeError('private_trial_requires_real_verified_exit')
