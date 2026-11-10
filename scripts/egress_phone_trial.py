@@ -82,7 +82,7 @@ def trial(namespace, upstream, initial):
         def verify_route(cancel):
             report=probe_issued_route('https://'+gateway.public_host,'route_diagnostic',diagnostic_key,'DE',ROOT/'.runtime/bin/xray',cancel)
             print('::notice title=Phone-path exit evidence::'+json.dumps(report),flush=True)
-            if not report['country_verified']:
+            if not report['country_verified'] or report.get('udp_dns_passed') is not True:
                 controller.pool_failed('personal-de')
                 raise ProbeError('issued_route_country_mismatch')
             route_report.clear();route_report.update(report)

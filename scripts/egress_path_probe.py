@@ -140,8 +140,8 @@ def probe(service, user, key, country, xray, cancel):
                 except OSError:
                     if time.monotonic()>=deadline:raise ValueError('Probe client did not start')
                     time.sleep(.05)
-            stage='issued_route_udp_dns'
-            udp_dns(port)
+            # Match phone startup: its engine performs a TCP/HTTPS health check
+            # before app traffic. Establish/measure that path before UDP.
             stage='issued_route_https_geography'
             observations={};timings={}
             urls=['https://api.ipify.org?format=json','https://ifconfig.co/json','https://ipwho.is/','https://ipinfo.io/json','https://api.country.is/']
@@ -157,7 +157,14 @@ def probe(service, user, key, country, xray, cancel):
                         timings[str(index)]=round((time.monotonic()-began)*1000)
                     except ValueError:pass
             assessment=assess_responses(observations, expected_country=country, require_conflict_source=True)
-            assessment.update(path='issued_tls_gateway_route',udp_dns_passed=True,runner_https_ms=timings)
+            assessment.update(path='issued_tls_gateway_route',udp_dns_passed=False,runner_https_ms=timings)
+            print('::notice title=Issued-route TCP evidence::'+json.dumps(assessment),flush=True)
+            if not assessment['country_verified']:
+                return assessment
+            stage='issued_route_udp_dns'
+            began=time.monotonic()
+            udp_dns(port)
+            assessment.update(udp_dns_passed=True,runner_udp_ms=round((time.monotonic()-began)*1000))
             return assessment
     except Exception as error:
         # Only fixed stage/class identifiers, never exception text or URI/key.
