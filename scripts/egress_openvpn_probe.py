@@ -328,11 +328,27 @@ def probe(envelope, metadata_fetcher=None, *, private_trial=None):
                 result.update(country_verified=False, status='leak_test_failed')
             elif len(drop_checks) != 2:
                 result.update(country_verified=False, status='drop_test_inconclusive')
-        except (ProbeError, ValueError, OSError, subprocess.TimeoutExpired):
+        except (ProbeError, ValueError, OSError, subprocess.TimeoutExpired) as failure:
+            result['failure_type'] = type(failure).__name__
+            if isinstance(failure, OSError):
+                result['failure_errno'] = failure.errno
             diagnostic = ''
             if log.exists():
                 with log.open(errors='replace') as stream:
                     diagnostic = stream.read(65536)
+            result['log_markers'] = [label for marker, label in [
+                ('VERIFY OK', 'certificate_chain_checked'),
+                ('Peer Connection Initiated', 'tls_peer_connected'),
+                ('PUSH_REPLY', 'configuration_received'),
+                ('AUTH_FAILED', 'server_auth_failed'),
+                ('Data channel cipher negotiation failed', 'cipher_negotiation_failed'),
+                ('failed to negotiate cipher', 'cipher_negotiation_failed'),
+                ('OPTIONS ERROR', 'pushed_options_rejected'),
+                ('Compression is not allowed', 'compression_rejected'),
+                ('Initialization Sequence Completed', 'initialization_completed'),
+                ('Connection reset', 'connection_reset'),
+                ('Exiting due to fatal error', 'fatal_error'),
+            ] if marker in diagnostic]
             result['country_verified'] = False
             result['verified_country'] = None
             result['failed_stage'] = stage

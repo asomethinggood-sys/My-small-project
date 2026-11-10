@@ -1,4 +1,5 @@
 name: Bounded VPNGate isolated connection test
+# Diagnostic revision: allowlisted handshake markers only; never raw logs.
 on:
   push:
     branches: [arena/f056ce38-my-small-project]
