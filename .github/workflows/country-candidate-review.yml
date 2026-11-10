@@ -41,7 +41,7 @@ jobs:
                       rejections['strict: '+str(error)]+=1
                       config=sanitize(profile,aead_only=True)
                       count['aead_only_candidate']+=1
-                  count.setdefault('public_candidates', []).append({'endpoint_ip':config['endpoint_ip'], 'port':config['endpoint_port'], 'transport':config['transport']})
+                  count.setdefault('public_candidates', []).append({'endpoint_ip':config['endpoint_ip'], 'directory_ip':row.get('IP'), 'port':config['endpoint_port'], 'transport':config['transport']})
                   if config['transport'] not in count['protocols']:count['protocols'].append(config['transport'])
               except UnicodeError:
                   rejections['encoding_rejected']+=1
@@ -49,4 +49,14 @@ jobs:
                   rejections['rejected: '+str(error)]+=1
           print('::notice title=Alternative candidate counts (not working exits)::'+json.dumps(counts))
           print('::notice title=Sanitizer rejection categories::'+json.dumps(dict(rejections)))
+          import tempfile
+          from scripts.egress_vpngate import acquire
+          try:
+              with tempfile.TemporaryDirectory() as directory:
+                  acquire('JP','219.100.37.175',directory+'/candidate.json')
+              print('::notice title=Acquisition test::passed')
+          except Exception as error:
+              known={'Invalid official directory','Selected official candidate unavailable','Directory HTTP failure','Directory exceeds size budget'}
+              reason=str(error) if str(error) in known else type(error).__name__
+              print('::notice title=Acquisition test::'+reason)
           PY

@@ -36,7 +36,13 @@ jobs:
           timeout 60s python3 - <<'PY'
           import os
           from scripts.egress_vpngate import acquire
-          acquire('JP', '219.100.37.175', os.path.join(os.environ['RUNNER_TEMP'], 'nyx-personal-upstream.json'))
+          try:
+              acquire('JP', '219.100.37.175', os.path.join(os.environ['RUNNER_TEMP'], 'nyx-personal-upstream.json'))
+          except Exception as error:
+              known = {'Invalid official directory', 'Selected official candidate unavailable', 'Directory HTTP failure', 'Directory exceeds size budget'}
+              reason = str(error) if str(error) in known else type(error).__name__
+              print('::error title=Official candidate acquisition::'+reason, flush=True)
+              raise SystemExit(1)
           PY
           test -s "$RUNNER_TEMP/nyx-personal-upstream.json"
       - name: Start verified one-owner trial and publish only encrypted provisioning
