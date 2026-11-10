@@ -57,8 +57,20 @@ No trial was started and no shared deployment or default route was changed.
 
 These are provider descriptions, not evidence of working exit counts. Provider
 policies and inventories can change. The sandbox permits outbound traffic only to
-specified code/package hosts, so no fresh live VPNGate directory or tunnel was
-measured here.
+specified code/package hosts, so the fresh directory observation below was taken
+in a bounded GitHub workflow, not in the sandbox. No new tunnel was tested.
+
+### Fresh official directory observation
+
+[Run 42841788578](https://github.com/asomethinggood-sys/My-small-project/actions/runs/42841788578)
+inspected one response on 2026-11-10. Unique advertised ingress IPs / inspected /
+accepted TCP configurations were: JP 52 / 3 / 3; KR 21 / 3 / 3; US 3 / 3 / 3;
+IN 2 / 2 / 2; AU 1 / 1 / 1; RO 1 / 1 / 1. Zero inspected configurations had
+UDP transport; no tunnel or UDP capability test was performed. Other target
+countries had no eligible OpenVPN ingress in that snapshot. These are transient
+snapshot counts, not the full provider inventory, country-verified exits, or
+current usable pools. The run's success means inspection executed, not that any
+VPN connected. Its sanitized output and artifact contain no profiles.
 
 ## Bounded inspection utility
 

@@ -14,4 +14,5 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 1
     steps:
-      - run: echo 'Disabled: historical experiment exposed plaintext profiles. No tunnel was started.'
+      - run: |
+          echo 'Disabled: historical experiment exposed plaintext profiles. No tunnel was started.'
