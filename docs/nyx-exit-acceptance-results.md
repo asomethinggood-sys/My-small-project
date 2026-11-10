@@ -43,6 +43,21 @@ Live workflow **42829732452**, job **129876333704**, tested three advertised JP 
 
 The local suite now passes **139 tests**, including endpoint binding, target filtering, deduplication, bounded candidate limits, credential rejection, and pinned-GCM configuration. The VPNGate connection path remains experimentally unsuccessful; phone integration is not enabled. Successful future namespace probes would still need issued-route acceptance before any phone handoff.
 
+### Diagnosed cipher mismatch and verified Japanese namespace exits
+
+Diagnostics **42832212095** established that peers passed certificate-chain checks and reached TLS/configuration exchange; two then failed cipher negotiation. Broader AEAD negotiation in **42832475217** still failed, with AES-128-CBC reported. This is not a transport or certificate failure.
+
+A separate, explicit compatibility experiment uses AES-128-CBC with **HMAC-SHA256**, both already permitted by the strict sanitizer. It replaces the downloaded SHA1 hint with a SHA256 request; it does not enable SHA1, change TLS certificate checks, or silently fall back from AEAD. Profiles with tls-auth cannot use this rewriting mode. A peer that cannot use the requested data MAC must fail live traffic tests.
+
+Workflow **42832808690**, job **129887022861**, tested three JP candidates. One rejected authentication. Two established tunnels and passed independent country evidence, explicit-IP country.is matching, UDP DNS, tunnel-drop blocking, and unchanged host main-route checks:
+
+| Observed exit | Country observations | UDP | Tunnel-drop block | Host routes |
+| --- | --- | --- | --- | --- |
+| 219.100.37.240 | JP / JP / JP | passed | passed | unchanged |
+| 219.100.37.239 | JP / JP / JP | passed | passed | unchanged |
+
+These are **namespace verification results**, not phone or production availability. A bounded phone-path trial for the explicitly selected .239 official directory candidate is being evaluated separately in **42833374807**. The phone supervisor now binds availability, evidence, issued-route tests, and encrypted provisioning to the verified country/provider instead of hardcoding Germany. A missing selected directory endpoint fails closed; there is no automatic candidate rotation. Local tests: **142 passed**.
+
 ## Current delivery status
 
 The incorrect verified-country claim is now rejected. There is currently **no newly accepted German phone endpoint** to deliver. Full multi-country service, stable production signing and sustained deployment are not complete. Workflow ownership is not the blocker demonstrated here: upstream country evidence and compatible available pools are. No permanent hosted-runner loop, automatic trial renewal, PR, main-branch change or replacement release was made.

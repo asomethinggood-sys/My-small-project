@@ -200,7 +200,8 @@ def probe(envelope, metadata_fetcher=None, *, private_trial=None):
     country = envelope.get('country', 'DE') if envelope['provider'] == 'vpngate' else 'DE'
     result = {'provider': envelope['provider'], 'advertised_country': country, 'shared_service': False,
               'candidate_id': parsed.get('candidate_id', 'local-fixture-or-unspecified'),
-              'endpoint_port': parsed['endpoint_port'], 'cipher_policy': parsed['cipher_policy'],
+              'endpoint_ip': parsed['endpoint_ip'], 'endpoint_port': parsed['endpoint_port'],
+              'cipher_policy': parsed['cipher_policy'],
               'status': 'not_connected', 'country_verified': False, 'connection_tested': True}
     namespace_created, resolver_created, moved = False, False, False
     process = None

@@ -41,6 +41,7 @@ jobs:
                       rejections['strict: '+str(error)]+=1
                       config=sanitize(profile,aead_only=True)
                       count['aead_only_candidate']+=1
+                  count.setdefault('public_candidates', []).append({'endpoint_ip':config['endpoint_ip'], 'port':config['endpoint_port'], 'transport':config['transport']})
                   if config['transport'] not in count['protocols']:count['protocols'].append(config['transport'])
               except UnicodeError:
                   rejections['encoding_rejected']+=1
