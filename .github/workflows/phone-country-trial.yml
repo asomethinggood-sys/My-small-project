@@ -36,7 +36,7 @@ jobs:
           timeout 60s python3 - <<'PY'
           import os
           from scripts.egress_vpngate import acquire
-          acquire('JP', '219.100.37.239', os.path.join(os.environ['RUNNER_TEMP'], 'nyx-personal-upstream.json'))
+          acquire('JP', '219.100.37.175', os.path.join(os.environ['RUNNER_TEMP'], 'nyx-personal-upstream.json'))
           PY
           test -s "$RUNNER_TEMP/nyx-personal-upstream.json"
       - name: Start verified one-owner trial and publish only encrypted provisioning
