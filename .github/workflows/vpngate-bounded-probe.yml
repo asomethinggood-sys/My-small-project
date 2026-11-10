@@ -1,5 +1,6 @@
 name: Bounded VPNGate isolated connection test
-# AEAD negotiation revision: modern AEAD choices, no CBC; allowlisted cipher diagnostics.
+# Only deliberately marked commits can start this finite personal research test.
+# A successful job is not proof of a route; read each per-country outcome.
 on:
   push:
     branches: [arena/a78a10a4-my-small-project]
@@ -9,11 +10,17 @@ permissions:
 jobs:
   probe:
     if: contains(github.event.head_commit.message, '[bounded-vpngate-probe]')
+    strategy:
+      fail-fast: false
+      matrix:
+        country: [KR, US, IN, AU, RO]
     runs-on: ubuntu-24.04
     timeout-minutes: 8
     steps:
       - uses: actions/checkout@v4
       - name: Install isolated test dependencies
         run: sudo apt-get update -qq && sudo apt-get install -y openvpn iproute2 iptables curl
-      - name: Test at most three official candidates without publishing a service
-        run: sudo timeout --signal=TERM --kill-after=10s 330s python3 -m scripts.egress_vpngate
+      - name: Test at most two same-country official candidates without a phone service
+        env:
+          COUNTRY: ${{ matrix.country }}
+        run: sudo timeout --signal=TERM --kill-after=10s 330s python3 -m scripts.egress_vpngate --country "$COUNTRY" --limit 2

@@ -72,8 +72,21 @@ class VPNGateTests(unittest.TestCase):
     def test_directory_deduplicates_and_filters_targets(self):
         row = 'vpn-test,8.8.8.8,JP,' + self.envelope['profile_base64'] + '\n'
         directory = '*vpn_servers\n#HostName,IP,CountryShort,OpenVPN_ConfigData_Base64\n' + row * 5
-        self.assertEqual(len(candidates(directory, {'JP'})), 1)
+        selected = candidates(directory, {'JP'})
+        self.assertEqual(len(selected), 1)
+        self.assertEqual(selected[0]['cipher_policy'], 'cbc_sha256')
         self.assertEqual(candidates(directory, {'DE'}), [])
         for limit in [0, 4, True]:
             with self.assertRaises(ValueError):candidates(directory, {'JP'}, limit)
         with self.assertRaises(ValueError):candidates('bad', {'JP'})
+
+    def test_full_snapshot_budget_and_conflicts_checked_before_selection(self):
+        from unittest.mock import patch
+        row = 'vpn-test,8.8.8.8,JP,' + self.envelope['profile_base64'] + '\n'
+        header = '*vpn_servers\n#HostName,IP,CountryShort,OpenVPN_ConfigData_Base64\n'
+        with patch('scripts.egress_catalog.MAX_ROWS', 1):
+            with self.assertRaises(ValueError):
+                candidates(header + row * 2, {'JP'}, limit=1)
+        conflicting = 'vpn-test,8.8.8.8,DE,' + self.envelope['profile_base64'] + '\n'
+        with self.assertRaises(ValueError):
+            candidates(header + row + conflicting, {'JP', 'DE'}, limit=1)

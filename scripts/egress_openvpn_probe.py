@@ -229,7 +229,7 @@ def probe(envelope, metadata_fetcher=None, *, private_trial=None):
     result = {'provider': envelope['provider'], 'advertised_country': country, 'shared_service': False,
               'candidate_id': parsed.get('candidate_id', 'local-fixture-or-unspecified'),
               'endpoint_ip': parsed['endpoint_ip'], 'endpoint_port': parsed['endpoint_port'],
-              'cipher_policy': parsed['cipher_policy'],
+              'transport': parsed['transport'], 'cipher_policy': parsed['cipher_policy'],
               'status': 'not_connected', 'country_verified': False, 'connection_tested': True}
     namespace_created, resolver_created, moved = False, False, False
     process = None
