@@ -6,9 +6,19 @@ on:
       - .github/workflows/multi-provider-discovery.yml
       - scripts/egress_vpnjantit.py
       - scripts/egress_proton_inventory.py
+      - scripts/egress_catalog.py
+      - scripts/egress_refresh.py
+      - tests/test_egress_refresh.py
   workflow_dispatch:
+  # GitHub only runs schedules on the default branch; on this branch it is inert.
+  # This is a bounded diagnostic, not a hosted VPN or live production feed.
+  schedule:
+    - cron: '17 */6 * * *'
 permissions:
   contents: read
+concurrency:
+  group: nyx-provider-discovery-${{ github.ref }}
+  cancel-in-progress: false
 jobs:
   directory:
     runs-on: ubuntu-24.04
@@ -16,13 +26,13 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - name: Test provider parsers
-        run: python3 -m unittest discover -s tests -p 'test_egress_*inventory.py' -v && python3 -m unittest discover -s tests -p 'test_egress_vpnjantit.py' -v
+        run: python3 -m unittest discover -s tests -p 'test_egress_*inventory.py' -v && python3 -m unittest discover -s tests -p 'test_egress_vpnjantit.py' -v && python3 -m unittest discover -s tests -p 'test_egress_refresh.py' -v && python3 -m unittest discover -s tests -p 'test_egress_path_probe.py' -v
       - name: Inspect one snapshot per provider without creating accounts
         id: discovery
         continue-on-error: true
         run: |
           status=0
-          timeout 60s python3 -m scripts.egress_catalog --live --vpnjantit-live --output .runtime/egress/jantit-catalog.json || status=$?
+          timeout 70s python3 -m scripts.egress_refresh --once --output .runtime/egress/jantit-catalog.json || status=$?
           if [ -f .runtime/egress/jantit-catalog.json ]; then
             python3 - <<'PY'
           import json

@@ -1,8 +1,9 @@
 import copy
+import threading
 import unittest
 from unittest.mock import patch, MagicMock
 import urllib.error
-from scripts.egress_path_probe import client_config, request, await_service, conflict_lookup
+from scripts.egress_path_probe import client_config, request, await_service, conflict_lookup, measure_geography
 from scripts.egress_openvpn_probe import assess_responses
 
 
@@ -10,6 +11,26 @@ class IssuedPathTests(unittest.TestCase):
     def lease(self):
         return {'country':'DE','token':'A'*43,'generation':1,'expires_in':90,
                 'profile':'vless://12345678-1234-1234-1234-123456789abc@trial.example:443?security=tls&type=ws&sni=trial.example&host=trial.example&path=%2Fs%2F'+'A'*43+'%2F1'}
+
+    def test_parallel_geography_keeps_independent_sources_and_proxied_path(self):
+        barrier = threading.Barrier(4)
+        calls = []
+        def fake_run(command, **kwargs):
+            calls.append(command)
+            barrier.wait(timeout=2)
+            return MagicMock(returncode=0, stdout=b'{"ip":"8.8.4.4","country":"DE"}')
+        with patch('scripts.egress_path_probe.subprocess.run', side_effect=fake_run):
+            rows, timings = measure_geography(18089, threading.Event())
+        self.assertEqual(set(rows), {0, 1, 2, 3})
+        self.assertEqual(set(timings), {'0', '1', '2', '3'})
+        self.assertTrue(all('socks5h://127.0.0.1:18089' in command for command in calls))
+        self.assertEqual(len({command[-1] for command in calls}), 4)
+
+    def test_cancelled_geography_does_not_issue_requests(self):
+        event=threading.Event();event.set()
+        with patch('scripts.egress_path_probe.subprocess.run') as run:
+            with self.assertRaises(ValueError):measure_geography(18089,event)
+        run.assert_not_called()
 
     def test_profile_uses_exact_tls_lease_route_and_no_direct_outbound(self):
         config=client_config('https://trial.example',self.lease(),'DE',18089)

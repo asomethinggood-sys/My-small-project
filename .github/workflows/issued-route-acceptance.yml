@@ -8,7 +8,7 @@ permissions:
   contents: read
 jobs:
   test:
-    if: contains(github.event.head_commit.message, '[bounded-issued-route]')
+    if: contains(github.event.head_commit.message, '[bounded-issued-route]') || contains(github.event.head_commit.message, '[bounded-issued-route-de]')
     runs-on: ubuntu-24.04
     timeout-minutes: 12
     steps:
@@ -21,8 +21,17 @@ jobs:
           sudo apt-get install -y --no-install-recommends openvpn iptables curl
           bash scripts/download-binaries.sh .runtime/bin --xray-only
           bash scripts/download-cloudflared.sh .runtime/bin
-      - name: Exercise the actual authenticated Korean route, without provisioning a phone
-        run: sudo --preserve-env=RUNNER_TEMP timeout --signal=TERM --kill-after=15s 540s python3 -u -m scripts.egress_route_acceptance --country KR
+      - name: Exercise the authenticated route, without provisioning a phone
+        env:
+          EVENT_PATH: ${{ github.event_path }}
+        run: |
+          country=$(python3 - <<'PY'
+          import json, os
+          with open(os.environ['EVENT_PATH']) as f: message=json.load(f)['head_commit']['message']
+          print('DE' if '[bounded-issued-route-de]' in message else 'KR')
+          PY
+          )
+          sudo --preserve-env=RUNNER_TEMP timeout --signal=TERM --kill-after=15s 540s python3 -u -m scripts.egress_route_acceptance --country "$country"
       - name: Remove private runtime files
         if: always()
         run: sudo rm -rf "$RUNNER_TEMP/nyx-private-runtime"

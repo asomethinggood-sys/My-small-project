@@ -3,6 +3,7 @@
 Private profiles and API credentials stay in memory / mode-600 temporary files.
 Published diagnostics contain only exit evidence and runner-origin timings.
 """
+import concurrent.futures
 import json
 import os
 from pathlib import Path
@@ -139,6 +140,35 @@ def udp_dns(port):
         if not flags&0x8000 or flags&15 or not answers:raise ValueError('DNS answer rejected')
 
 
+def measure_geography(port, cancel):
+    """Measure four independent HTTPS sources concurrently on the issued path.
+
+    The same strict country/IP quorum still decides eligibility. Timings are
+    runner-origin cold HTTPS request times, not ICMP or the phone's ping.
+    """
+    urls=['https://api.ipify.org?format=json','https://ifconfig.co/json',
+          'https://ipwho.is/','https://ipinfo.io/json']
+    def measure(item):
+        index, url = item
+        if cancel.is_set(): raise ValueError('Probe cancelled')
+        began=time.monotonic()
+        result=subprocess.run(['curl','--ipv4','--fail','--silent','--connect-timeout','3','--max-time','4','--max-filesize','32768',
+            '--proto','=https','--noproxy','','--proxy',f'socks5h://127.0.0.1:{port}',url],capture_output=True,timeout=5,env={'PATH':'/usr/sbin:/usr/bin:/sbin:/bin'})
+        if result.returncode: return index, None, None
+        try:
+            value=json.loads(result.stdout)
+        except ValueError:
+            return index, None, None
+        if not isinstance(value,dict) or not isinstance(value.get('ip'),str):
+            return index, None, None
+        return index, value, round((time.monotonic()-began)*1000)
+    with concurrent.futures.ThreadPoolExecutor(max_workers=4) as executor:
+        results=list(executor.map(measure, enumerate(urls)))
+    if cancel.is_set(): raise ValueError('Probe cancelled')
+    return ({i: value for i,value,_ in results if value is not None},
+            {str(i): ms for i,value,ms in results if value is not None})
+
+
 def probe(service, user, key, country, xray, cancel):
     lease=None;process=None;stage='https_service_readiness'
     try:
@@ -163,25 +193,15 @@ def probe(service, user, key, country, xray, cancel):
             # Match phone startup: its engine performs a TCP/HTTPS health check
             # before app traffic. Establish/measure that path before UDP.
             stage='issued_route_https_geography'
-            observations={};timings={}
-            urls=['https://api.ipify.org?format=json','https://ifconfig.co/json','https://ipwho.is/','https://ipinfo.io/json']
-            for index,url in enumerate(urls):
-                if cancel.is_set():raise ValueError('Probe cancelled')
-                began=time.monotonic()
-                result=subprocess.run(['curl','--ipv4','--fail','--silent','--connect-timeout','3','--max-time','4','--max-filesize','32768',
-                    '--proto','=https','--noproxy','','--proxy',f'socks5h://127.0.0.1:{port}',url],capture_output=True,timeout=5,env={'PATH':'/usr/sbin:/usr/bin:/sbin:/bin'})
-                if result.returncode==0:
-                    try:
-                        value=json.loads(result.stdout)
-                        if isinstance(value,dict) and isinstance(value.get('ip'),str):observations[index]=value
-                        timings[str(index)]=round((time.monotonic()-began)*1000)
-                    except ValueError:pass
+            started=time.monotonic()
+            observations,timings=measure_geography(port,cancel)
+            geography_elapsed_ms=round((time.monotonic()-started)*1000)
             measured=assess_responses(observations, expected_country=country)
             if measured['independent_ip_agreement']:
                 stage='explicit_exit_country_lookup'
                 observations[4]=conflict_lookup(measured['exit_ipv4'])
             assessment=assess_responses(observations, expected_country=country, require_conflict_source=True)
-            assessment.update(path='issued_tls_gateway_route',conflict_lookup_scope='explicit_measured_exit_ip',udp_dns_passed=False,runner_https_ms=timings)
+            assessment.update(path='issued_tls_gateway_route',conflict_lookup_scope='explicit_measured_exit_ip',udp_dns_passed=False,runner_https_ms=timings,runner_https_phase_ms=geography_elapsed_ms)
             print('::notice title=Issued-route TCP evidence::'+json.dumps(assessment),flush=True)
             if not assessment['country_verified']:
                 return assessment

@@ -1,0 +1,18 @@
+# Example user service. Set WorkingDirectory to the actual repository checkout.
+# This only refreshes local metadata; it does not host or restart a VPN tunnel.
+[Unit]
+Description=Nyx provider discovery metadata refresh
+After=network-online.target
+
+[Service]
+Type=simple
+WorkingDirectory=%h/My-small-project
+ExecStart=/usr/bin/python3 -m scripts.egress_refresh --interval 300 --duration 21600
+Restart=always
+RestartSec=10s
+TimeoutStopSec=70s
+NoNewPrivileges=true
+PrivateTmp=true
+
+[Install]
+WantedBy=default.target

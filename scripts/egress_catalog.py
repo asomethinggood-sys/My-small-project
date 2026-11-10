@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 """Bounded metadata discovery only. Never connect, execute configs or publish profiles."""
 import argparse
+import concurrent.futures
 import csv
 import hashlib
 import io
@@ -172,6 +173,39 @@ def atomic_write(path, value):
             os.unlink(temporary)
 
 
+def collect_sources(countries, *, live=False, fixture=None, vpnjantit_live=False):
+    """Fetch independent directories concurrently; never retain stale source data."""
+    def vpngate():
+        try:
+            text = fetch_directory() if live else fixture.read_text()
+            return parse_vpngate(text, countries), {'provider': 'vpngate', 'status': 'fetched',
+                                                    'mode': 'live' if live else 'fixture'}, False
+        except (OSError, ValueError, csv.Error):
+            return [], {'provider': 'vpngate', 'status': 'fetch_or_parse_failed'}, True
+
+    def vpnjantit():
+        from scripts.egress_vpnjantit import fetch_directory as fetch_jantit, parse_directory as parse_jantit
+        try:
+            return parse_jantit(fetch_jantit(), countries), {'provider': 'vpnjantit', 'status': 'fetched', 'mode': 'live'}, False
+        except (OSError, ValueError):
+            return [], {'provider': 'vpnjantit', 'status': 'fetch_or_parse_failed'}, True
+
+    tasks = [('vpngate', vpngate if live or fixture else None),
+             ('vpnjantit', vpnjantit if vpnjantit_live else None)]
+    with concurrent.futures.ThreadPoolExecutor(max_workers=2) as executor:
+        pending = [(name, executor.submit(task) if task else None) for name, task in tasks]
+        observations, sources, failed = [], [], False
+        for name, future in pending:
+            if future is None:
+                sources.append({'provider': name, 'status': 'not_fetched'})
+                continue
+            rows, status, error = future.result()
+            observations.extend(rows)
+            sources.append(status)
+            failed |= error
+    return observations, sources, failed
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--policy', default='config/egress.json')
@@ -184,30 +218,9 @@ def main():
     args = parser.parse_args()
     policy = json.loads(Path(args.policy).read_text())
     validate_policy(policy)
-    observations, sources = [], []
-    failed = False
-    if args.live or args.fixture:
-        try:
-            text = fetch_directory() if args.live else args.fixture.read_text()
-            observations = parse_vpngate(text, set(policy['target_countries']))
-            sources.append({'provider': 'vpngate', 'status': 'fetched',
-                            'mode': 'live' if args.live else 'fixture'})
-        except (OSError, ValueError, csv.Error):
-            # Do not leak raw responses/configs in diagnostics or retain stale candidates.
-            sources.append({'provider': 'vpngate', 'status': 'fetch_or_parse_failed'})
-            failed = True
-    else:
-        sources.append({'provider': 'vpngate', 'status': 'not_fetched'})
-    if args.vpnjantit_live:
-        from scripts.egress_vpnjantit import fetch_directory as fetch_jantit, parse_directory as parse_jantit
-        try:
-            observations.extend(parse_jantit(fetch_jantit(), set(policy['target_countries'])))
-            sources.append({'provider': 'vpnjantit', 'status': 'fetched', 'mode': 'live'})
-        except (OSError, ValueError):
-            sources.append({'provider': 'vpnjantit', 'status': 'fetch_or_parse_failed'})
-            failed = True
-    else:
-        sources.append({'provider': 'vpnjantit', 'status': 'not_fetched'})
+    observations, sources, failed = collect_sources(set(policy['target_countries']),
+                                                     live=args.live, fixture=args.fixture,
+                                                     vpnjantit_live=args.vpnjantit_live)
     result = build_catalog(policy, observations, sources)
     registry = json.loads(Path(args.adapters).read_text())
     result['adapters'] = registry['adapters']
