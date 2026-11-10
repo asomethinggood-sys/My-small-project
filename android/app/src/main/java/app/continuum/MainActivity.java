@@ -51,14 +51,16 @@ public final class MainActivity extends Activity {
         TextView build=text("NYX  /  "+BuildConfig.VERSION_NAME+"  ·  RUST CORE + XRAY",9,MUTED);build.setLetterSpacing(.08f);add(root,build,24,0);
     }
     private void render(){
-        VpnStatus s=client.status;state.setText(s.state);detail.setText(!s.running&&!selectedCountry.isEmpty()?selectedCountry+" selected · no default fallback":s.detail);endpoint.setText(s.host);latency.setText(s.latency<0?"—":s.latency+" ms");
-        boolean stopping="Disconnecting".equals(s.state);connect.setText(stopping?"Disconnecting…":s.running?"Disconnect":"Connect");connect.setEnabled(!stopping);connect.setAlpha(stopping?.6f:1f);
-        protocolName.setText(s.running?s.protocol:selected==null?"VLESS":selected.protocolLabel());transportName.setText((s.running?s.transport:selected==null?"WebSocket · TLS":selected.transportLabel())+"  ›");
+        VpnStatus s=client.status;setTextIfChanged(state,s.state);setTextIfChanged(detail,!s.running&&!selectedCountry.isEmpty()?selectedCountry+" selected · no default fallback":s.detail);setTextIfChanged(endpoint,s.host);setTextIfChanged(latency,s.latency<0?"—":s.latency+" ms");
+        boolean stopping="Disconnecting".equals(s.state);setTextIfChanged(connect,stopping?"Disconnecting…":s.running?"Disconnect":"Connect");connect.setEnabled(!stopping);connect.setAlpha(stopping?.6f:1f);
+        setTextIfChanged(protocolName,s.running?s.protocol:selected==null?"VLESS":selected.protocolLabel());setTextIfChanged(transportName,(s.running?s.transport:selected==null?"WebSocket · TLS":selected.transportLabel())+"  ›");
         long duration=s.connectedAt==0?0:(SystemClock.elapsedRealtime()-s.connectedAt)/1000;
-        session.setText(s.connectedAt==0?"—":String.format(Locale.US,"%02d:%02d:%02d",duration/3600,(duration/60)%60,duration%60));
-        countdown.setText(s.running?"Next check in "+Math.max(0,(s.nextCheck-SystemClock.elapsedRealtime())/1000)+"s":"Updates while connected");
+        setTextIfChanged(session,s.connectedAt==0?"—":String.format(Locale.US,"%02d:%02d:%02d",duration/3600,(duration/60)%60,duration%60));
+        setTextIfChanged(countdown,s.running?"Next check in "+Math.max(0,(s.nextCheck-SystemClock.elapsedRealtime())/1000)+"s":"Updates while connected");
         orbit.phase(RustCore.connectionPhase(s.running,s.tunOpen,s.engineRunning,"Connected".equals(s.state),stopping));
     }
+    // Avoid repeated accessibility/content-change events for identical state.
+    private void setTextIfChanged(TextView view,CharSequence value){if(!android.text.TextUtils.equals(view.getText(),value))view.setText(value);}
     private void selectionChanged(){try{JSONObject settings=store.load();selectedCountry=settings.optString("country","");String manual=SettingsStore.manual(settings);selected=manual==null?null:Profile.parse(manual);}catch(Exception ignored){selected=null;}}
     private void toggle(){
         if(client.status.running){client.disconnect();render();toast("Disconnect requested. Disable Android lockdown if it blocks Internet while paused.");return;}

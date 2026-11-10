@@ -105,9 +105,23 @@ compressed Continuum preview is not a complete Nyx release. Rust/JNI, Android
 orchestration and Go/Xray have distinct roles; this is not an all-Rust VPN engine.
 The home orbit now has a translucent gradient and bounded touch parallax, with a
 reduced-motion-aware return. It is not a verified replica of any iOS material.
-No Android SDK, JDK, Gradle, or Rust toolchain is installed in this sandbox, so
-this change has not been built or tested on an emulator/POCO. Stable release
-signing remains unprovisioned; never commit signing keys or credentials.
+No Android SDK, JDK, Gradle, or Rust toolchain is installed in the local sandbox.
+[Android run 42841631158](https://github.com/asomethinggood-sys/My-small-project/actions/runs/42841631158)
+compiled and tested the changed interface; its build and API 26, 35, 35/16 KB,
+and 36 compatibility jobs passed. API 29 installed, reinstalled and launched the
+exact universal APK, but UI Automator repeatedly failed to obtain an idle tree;
+the overall run failed. A subsequent change avoids setting identical TextView
+contents every second, a possible source of repeated accessibility events; that
+hypothesis requires a new complete run. The candidate in that run measured
+41,447,799 bytes ARM64 and 143,849,094 bytes universal, with an ephemeral release
+signer. No physical POCO result or stable signer is established; never commit
+signing keys or credentials.
+
+Local validation passed 153 Python tests and 13 Node tests. The bounded backend
+workflow [42841631088](https://github.com/asomethinggood-sys/My-small-project/actions/runs/42841631088)
+and legacy published-APK install audit
+[42841631089](https://github.com/asomethinggood-sys/My-small-project/actions/runs/42841631089)
+passed; neither proves a new public VPN deployment or country route.
 
 The removed local forwarding stage is a structural change, not a measured phone
 speedup. The connector, runner-to-upstream and destination paths may dominate.
