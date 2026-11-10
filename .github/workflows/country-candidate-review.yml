@@ -2,7 +2,7 @@ name: Bounded alternative-country candidate review
 on:
   push:
     branches: [arena/f056ce38-my-small-project]
-    paths: [.github/workflows/country-candidate-review.yml]
+    paths: [.github/workflows/country-candidate-review.yml, scripts/egress_openvpn.py]
 permissions:
   contents: read
 jobs:

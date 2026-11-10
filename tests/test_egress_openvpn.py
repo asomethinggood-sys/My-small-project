@@ -48,6 +48,12 @@ class OpenVPNBoundaryTests(unittest.TestCase):
         with self.assertRaises(ValueError):
             sanitize(self.config + '<key>\ninvalid\n</key>\n')
 
+    def test_tcp_client_alias_is_canonicalized_without_server_mode(self):
+        result = sanitize(self.config.replace('proto udp', 'proto tcp'))
+        self.assertEqual(result['transport'], 'tcp')
+        self.assertIn('proto tcp-client\n', result['config'])
+        with self.assertRaises(ValueError):sanitize(self.config.replace('proto udp', 'proto tcp-server'))
+
     def test_tcp_transport_distinct_from_udp_payload_capability(self):
         result = sanitize(self.config.replace('proto udp', 'proto tcp-client'))
         self.assertEqual(result['transport'], 'tcp')

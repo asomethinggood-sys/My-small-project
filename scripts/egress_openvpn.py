@@ -59,6 +59,10 @@ def sanitize(text):
             or not re.fullmatch(r'tun[0-9]{0,2}', device[0])):
         raise ValueError('TUN client configuration required')
     protocol = values.get('proto', ['udp'])
+    # In an explicitly validated client configuration OpenVPN's `tcp` alias
+    # means tcp-client. Canonicalize it; never admit tcp-server or weaken TLS.
+    if protocol == ['tcp']:
+        protocol = ['tcp-client']
     if protocol not in (['udp'], ['udp4'], ['tcp-client'], ['tcp4-client']):
         raise ValueError('Unsupported transport')
     remote = values.get('remote', [])
