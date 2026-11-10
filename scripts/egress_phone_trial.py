@@ -29,7 +29,9 @@ from scripts.egress_path_probe import probe as probe_issued_route
 ROOT = Path(__file__).resolve().parents[1]
 
 
-def trial(namespace, upstream, initial):
+def trial(namespace, upstream, initial, *, acceptance_only=False):
+    if type(acceptance_only) is not bool:
+        raise ValueError('Explicit acceptance mode required')
     country = initial.get('verified_country')
     provider = initial.get('provider')
     if (not isinstance(country, str) or not re.fullmatch('[A-Z]{2}', country)
@@ -137,6 +139,11 @@ def trial(namespace, upstream, initial):
         # This must pass through the issued TLS/WS lease used by phone clients.
         print('::notice title=Trial validation stage::Checking public TLS lease path before issuing phone settings',flush=True)
         verify_route(threading.Event())
+        if acceptance_only:
+            # The diagnostic lease is revoked by the route probe. Stop the
+            # connector and pool immediately; never publish a phone handoff.
+            print('::notice title=Bounded issued-route acceptance::Diagnostic route passed; no phone settings issued',flush=True)
+            return
         route_ready=True
         duration=2700
         provision=json.dumps({'countryService':'https://'+gateway.public_host,'countryUser':owner,'countryKey':key,'country':country,'exit_ip':route_report['exit_ipv4'],'observed_countries':route_report['observed_countries'],'expires_at':int(time.time())+duration},separators=(',',':')).encode()

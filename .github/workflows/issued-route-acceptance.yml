@@ -1,0 +1,28 @@
+name: Bounded issued country-route diagnostic
+# A one-time, owner-authorized diagnostic. No phone handoff, release, or renewal.
+on:
+  push:
+    branches: [arena/a78a10a4-my-small-project]
+    paths: [.github/workflows/issued-route-acceptance.yml, scripts/egress_route_acceptance.py]
+permissions:
+  contents: read
+jobs:
+  test:
+    if: contains(github.event.head_commit.message, '[bounded-issued-route]')
+    runs-on: ubuntu-24.04
+    timeout-minutes: 12
+    steps:
+      - uses: actions/checkout@v4
+      - name: Verify bounded diagnostic policy
+        run: python3 -m unittest discover -s tests -p 'test_egress_route_acceptance.py' -v
+      - name: Install tools for the finite isolated test
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y --no-install-recommends openvpn iptables curl
+          bash scripts/download-binaries.sh .runtime/bin --xray-only
+          bash scripts/download-cloudflared.sh .runtime/bin
+      - name: Exercise the actual authenticated Korean route, without provisioning a phone
+        run: sudo --preserve-env=RUNNER_TEMP timeout --signal=TERM --kill-after=15s 540s python3 -u -m scripts.egress_route_acceptance --country KR
+      - name: Remove private runtime files
+        if: always()
+        run: sudo rm -rf "$RUNNER_TEMP/nyx-private-runtime"
