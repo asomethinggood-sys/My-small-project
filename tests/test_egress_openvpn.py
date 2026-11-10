@@ -62,12 +62,12 @@ class OpenVPNBoundaryTests(unittest.TestCase):
         result = sanitize(legacy, aead_only=True)
         self.assertEqual(result['cipher_policy'], 'aead_only_pinned_gcm')
         self.assertIn('cipher AES-128-GCM\n', result['config'])
-        self.assertIn('data-ciphers AES-128-GCM\n', result['config'])
+        self.assertIn('data-ciphers AES-256-GCM:AES-128-GCM:CHACHA20-POLY1305\n', result['config'])
         self.assertIn('data-ciphers-fallback AES-128-GCM\n', result['config'])
         self.assertIn('auth SHA256', result['config'])
         self.assertIn('remote-cert-tls server', result['config'])
         self.assertIn('tls-version-min 1.2', result['config'])
-        for removed in ['SHA1', 'CBC', 'CHACHA']:
+        for removed in ['SHA1', 'CBC']:
             self.assertNotIn(removed, result['config'])
 
     def test_aead_mode_does_not_weaken_tls_or_control_channel(self):

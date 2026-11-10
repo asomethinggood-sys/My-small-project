@@ -1,5 +1,5 @@
 name: Bounded VPNGate isolated connection test
-# Diagnostic revision: allowlisted handshake markers only; never raw logs.
+# AEAD negotiation revision: modern AEAD choices, no CBC; allowlisted cipher diagnostics.
 on:
   push:
     branches: [arena/f056ce38-my-small-project]

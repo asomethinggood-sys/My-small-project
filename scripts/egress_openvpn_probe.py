@@ -336,6 +336,8 @@ def probe(envelope, metadata_fetcher=None, *, private_trial=None):
             if log.exists():
                 with log.open(errors='replace') as stream:
                     diagnostic = stream.read(65536)
+            result['reported_ciphers'] = sorted(set(re.findall(
+                r'(?<![A-Za-z0-9-])(?:AES-(?:128|256)-(?:GCM|CBC)|CHACHA20-POLY1305|BF-CBC)(?![A-Za-z0-9-])', diagnostic)))
             result['log_markers'] = [label for marker, label in [
                 ('VERIFY OK', 'certificate_chain_checked'),
                 ('Peer Connection Initiated', 'tls_peer_connected'),

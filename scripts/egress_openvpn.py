@@ -153,8 +153,9 @@ def sanitize(text, *, aead_only=False):
     if aead_only:
         # SoftEther can support GCM without OpenVPN's cipher-negotiation
         # extension. Both negotiated and non-negotiated peers are pinned to
-        # exactly the same AEAD cipher; there is no CBC/SHA1 data fallback.
-        output += ['cipher AES-128-GCM', 'data-ciphers AES-128-GCM',
+        # AEAD ciphers only; there is no CBC/SHA1 data fallback. Negotiating
+        # peers may choose any modern AEAD instead of being pinned to 128-GCM.
+        output += ['cipher AES-128-GCM', 'data-ciphers AES-256-GCM:AES-128-GCM:CHACHA20-POLY1305',
                    'data-ciphers-fallback AES-128-GCM']
     for name in (['key-direction'] if aead_only else ['cipher', 'data-ciphers', 'key-direction']):
         if name in values:
