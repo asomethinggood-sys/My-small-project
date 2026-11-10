@@ -1,1 +1,1 @@
-vless://8a4fca7b-6a79-48a1-a3d3-19b27065de5e@analyze-maybe-petition-studying.trycloudflare.com:443?encryption=none&security=tls&sni=analyze-maybe-petition-studying.trycloudflare.com&type=ws&host=analyze-maybe-petition-studying.trycloudflare.com&path=%2F553106a7bc2440b0a74d428a10a663ad#ArenaVPN
+vless://710e5d46-a1fb-43e2-b864-703fc431cf64@clark-recent-listen-take.trycloudflare.com:443?encryption=none&security=tls&sni=clark-recent-listen-take.trycloudflare.com&type=ws&host=clark-recent-listen-take.trycloudflare.com&path=%2Fe340bde4618d451486ce45cec4b384ca#ArenaVPN
