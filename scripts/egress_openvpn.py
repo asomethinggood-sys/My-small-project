@@ -119,7 +119,8 @@ def sanitize(text, *, aead_only=False):
     if ('cert' in blocks) != ('key' in blocks):
         raise ValueError('Inline client certificate and key must be paired')
     if 'cert' in blocks:
-        private_key = blocks['key']
+        private_key = blocks['key'].strip()
+        blocks['key'] = private_key
         if not re.fullmatch(r'-----BEGIN (?:RSA |EC )?PRIVATE KEY-----\s+[A-Za-z0-9+/=\s]+-----END (?:RSA |EC )?PRIVATE KEY-----', private_key):
             raise ValueError('Unsupported inline private key encoding')
         # SSL validates the pair and key strength. Temporary files are private,

@@ -43,6 +43,8 @@ class OpenVPNBoundaryTests(unittest.TestCase):
                            stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, timeout=15)
             text = self.config + '<cert>\n' + cert.read_text() + '</cert>\n<key>\n' + key.read_text() + '</key>\n'
             self.assertIn('<cert>', sanitize(text)['config'])
+            padded = text.replace('<key>\n', '<key>\n\n').replace('</key>', '\n\n</key>')
+            self.assertIn('<key>\n-----BEGIN ', sanitize(padded)['config'])
             with self.assertRaises(ValueError):
                 sanitize(text.replace(key.read_text().strip(), 'invalid-key'))
         with self.assertRaises(ValueError):
