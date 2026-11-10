@@ -144,7 +144,7 @@ def probe(service, user, key, country, xray, cancel):
             udp_dns(port)
             stage='issued_route_https_geography'
             observations={};timings={}
-            urls=['https://api.ipify.org?format=json','https://ifconfig.co/json','https://ipwho.is/','https://ipinfo.io/json']
+            urls=['https://api.ipify.org?format=json','https://ifconfig.co/json','https://ipwho.is/','https://ipinfo.io/json','https://api.country.is/']
             for index,url in enumerate(urls):
                 if cancel.is_set():raise ValueError('Probe cancelled')
                 began=time.monotonic()
@@ -156,7 +156,7 @@ def probe(service, user, key, country, xray, cancel):
                         if isinstance(value,dict) and isinstance(value.get('ip'),str):observations[index]=value
                         timings[str(index)]=round((time.monotonic()-began)*1000)
                     except ValueError:pass
-            assessment=assess_responses(observations, expected_country=country)
+            assessment=assess_responses(observations, expected_country=country, require_conflict_source=True)
             assessment.update(path='issued_tls_gateway_route',udp_dns_passed=True,runner_https_ms=timings)
             return assessment
     except Exception as error:

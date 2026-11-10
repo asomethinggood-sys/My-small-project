@@ -148,12 +148,14 @@ def classify_log(text):
     return 'connection_not_established'
 
 
-def assess_responses(results, expected_country='DE'):
+def assess_responses(results, expected_country='DE', *, require_conflict_source=False):
+    if type(require_conflict_source) is not bool:
+        raise ValueError('Explicit conflict-source policy required')
     if not re.fullmatch('[A-Z]{2}', expected_country):
         raise ValueError('Explicit expected country required')
     addresses = [str(global_ip(item['ip'])) for item in results.values()]
     countries = []
-    for index, field in [(1, 'country_iso'), (2, 'country_code'), (3, 'country')]:
+    for index, field in [(1, 'country_iso'), (2, 'country_code'), (3, 'country'), (4, 'country')]:
         item = results.get(index, {})
         code = item.get(field)
         if index == 2 and item.get('success') is not True:
@@ -161,10 +163,13 @@ def assess_responses(results, expected_country='DE'):
         if isinstance(code, str) and re.fullmatch('[A-Z]{2}', code):
             countries.append(code)
     ip_agreement = len(addresses) >= 2 and len(set(addresses)) == 1
-    agreement = ip_agreement and len(countries) >= 2 and set(countries) == {expected_country}
+    conflict_checked = bool(re.fullmatch('[A-Z]{2}', str(results.get(4, {}).get('country', ''))))
+    agreement = (ip_agreement and len(countries) >= 2 and set(countries) == {expected_country}
+                 and (not require_conflict_source or conflict_checked))
     success = 'german_exit_observed' if expected_country == 'DE' else 'verified_exit_observed'
     return {'status': success if agreement else 'exit_unverified_or_wrong_country',
             'verified_country': expected_country if agreement else None,
+            'conflict_source_checked': conflict_checked,
             'exit_ipv4': addresses[0] if ip_agreement else None,
             'country_verified': agreement, 'independent_ip_agreement': ip_agreement,
             'observed_countries': countries, 'https_and_dns_passed': bool(results)}
@@ -240,8 +245,8 @@ def probe(envelope, metadata_fetcher=None, *, private_trial=None):
             results = {}
             result['endpoint_probes'] = {}
             for index, url in enumerate(['https://api.ipify.org?format=json', 'https://ifconfig.co/json',
-                                         'https://ipwho.is/', 'https://ipinfo.io/json']):
-                stage = ['https_ip_echo', 'https_geo_first', 'https_geo_second', 'https_geo_fallback'][index]
+                                         'https://ipwho.is/', 'https://ipinfo.io/json', 'https://api.country.is/']):
+                stage = ['https_ip_echo', 'https_geo_first', 'https_geo_second', 'https_geo_fallback', 'https_geo_conflict_check'][index]
                 try:
                     if metadata_fetcher is not None:
                         # Injection is Python-only for isolated local fixtures.
@@ -260,7 +265,7 @@ def probe(envelope, metadata_fetcher=None, *, private_trial=None):
                     result['endpoint_probes'][stage] = 'passed'
                 except (ProbeError, ValueError) as error:
                     result['endpoint_probes'][stage] = str(error) if isinstance(error, ProbeError) else 'invalid_response'
-            result.update(assess_responses(results))
+            result.update(assess_responses(results, require_conflict_source=private_trial is not None))
             if private_trial is not None:
                 if metadata_fetcher is not None or not result.get('country_verified') or not result.get('udp_dns_passed'):
                     raise ProbeError('private_trial_requires_real_verified_exit')
@@ -279,7 +284,7 @@ def probe(envelope, metadata_fetcher=None, *, private_trial=None):
             if results:
                 # Never use an endpoint that already failed as the negative control.
                 successful_url = ['https://api.ipify.org?format=json', 'https://ifconfig.co/json',
-                                  'https://ipwho.is/', 'https://ipinfo.io/json'][min(results)]
+                                  'https://ipwho.is/', 'https://ipinfo.io/json', 'https://api.country.is/'][min(results)]
                 try:
                     run('ip', 'netns', 'exec', ns, 'curl', '--ipv4', '--fail', '--silent', '--max-time', '2',
                         '--noproxy', '*', successful_url, timeout=4)

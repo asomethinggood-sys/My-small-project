@@ -35,7 +35,7 @@ jobs:
         env:
           NYX_PROVIDER_PROBE: 'true'
           NYX_PRIVATE_TRIAL_ACQUIRE: 'true'
-          NYX_VPNBOOK_SERVER: de220
+          NYX_VPNBOOK_SERVER: de20
           NYX_VPNBOOK_PORT: '53'
         run: |
           timeout 150s node scripts/egress_vpnbook_browser.mjs

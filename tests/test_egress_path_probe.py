@@ -60,6 +60,19 @@ class IssuedPathTests(unittest.TestCase):
         self.assertIsNone(result['verified_country'])
         self.assertEqual(result['exit_ipv4'],'8.8.4.4')
 
+    def test_reported_france_source_is_required_and_has_veto(self):
+        observations={1:{'ip':'51.75.145.220','country_iso':'DE'},
+                      2:{'ip':'51.75.145.220','success':True,'country_code':'DE'},
+                      3:{'ip':'51.75.145.220','country':'DE'}}
+        self.assertFalse(assess_responses(observations,require_conflict_source=True)['country_verified'])
+        observations[4]={'ip':'51.75.145.220','country':'FR'}
+        rejected=assess_responses(observations,require_conflict_source=True)
+        self.assertFalse(rejected['country_verified'])
+        self.assertTrue(rejected['conflict_source_checked'])
+        self.assertIsNone(rejected['verified_country'])
+        observations[4]['country']='DE'
+        self.assertTrue(assess_responses(observations,require_conflict_source=True)['country_verified'])
+
     def test_observed_country_is_not_assigned_from_provider_label(self):
         observations={1:{'ip':'8.8.4.4','country_iso':'FR'},3:{'ip':'8.8.4.4','country':'FR'}}
         self.assertFalse(assess_responses(observations,'DE')['country_verified'])

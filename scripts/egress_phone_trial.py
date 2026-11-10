@@ -94,7 +94,7 @@ def trial(namespace, upstream, initial):
                 return verify_route(cancel)
             run('ip','netns','exec',namespace,'python3','-c',DNS_UDP_PROBE,timeout=6)
             observations={}
-            urls=['https://api.ipify.org?format=json','https://ifconfig.co/json','https://ipwho.is/','https://ipinfo.io/json']
+            urls=['https://api.ipify.org?format=json','https://ifconfig.co/json','https://ipwho.is/','https://ipinfo.io/json','https://api.country.is/']
             for index,url in enumerate(urls):
                 if cancel.is_set():raise ProbeError('trial_probe_cancelled')
                 try:
@@ -103,7 +103,7 @@ def trial(namespace, upstream, initial):
                     if not isinstance(value,dict):continue
                     observations[index]=value
                 except (ProbeError,ValueError):pass
-            if not assess_responses(observations)['country_verified']:raise ProbeError('exit_not_verified')
+            if not assess_responses(observations, require_conflict_source=True)['country_verified']:raise ProbeError('exit_not_verified')
             return Evidence('DE',True,True,True,True,True,time.monotonic()+90)
         supervisor=Supervisor(controller,{'personal-de':health},interval=45,timeout=40)
         cf_log=temporary/'connector.log'
