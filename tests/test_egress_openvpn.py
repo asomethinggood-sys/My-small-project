@@ -77,6 +77,18 @@ class OpenVPNBoundaryTests(unittest.TestCase):
             with self.assertRaises(ValueError):sanitize(self.config + extra, aead_only=True)
         with self.assertRaises(ValueError):sanitize(self.config, aead_only='yes')
 
+    def test_explicit_cbc_compatibility_requires_sha256_and_preserves_tls(self):
+        result = sanitize(self.config + 'auth SHA1\n', cbc_sha256=True)
+        self.assertEqual(result['cipher_policy'], 'cbc_sha256_explicit')
+        for line in ['auth SHA256', 'cipher AES-128-CBC', 'data-ciphers AES-128-CBC',
+                     'remote-cert-tls server', 'tls-version-min 1.2']:
+            self.assertIn(line + '\n', result['config'])
+        self.assertNotIn('SHA1', result['config'])
+        for kwargs in [dict(cbc_sha256='yes'), dict(cbc_sha256=True, aead_only=True)]:
+            with self.assertRaises(ValueError):sanitize(self.config, **kwargs)
+        for extra in ['auth MD5\n', 'tls-version-min 1.0\n', '<tls-auth>\ninvalid\n</tls-auth>\n']:
+            with self.assertRaises(ValueError):sanitize(self.config + extra, cbc_sha256=True)
+
     def test_tcp_transport_distinct_from_udp_payload_capability(self):
         result = sanitize(self.config.replace('proto udp', 'proto tcp-client'))
         self.assertEqual(result['transport'], 'tcp')

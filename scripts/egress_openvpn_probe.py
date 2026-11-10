@@ -60,7 +60,11 @@ def prepare(envelope):
         encoded = envelope.get('profile_base64', '')
         if not isinstance(encoded, str) or len(encoded) > 180000:
             raise ValueError('Configuration size rejected')
-        parsed = sanitize(base64.b64decode(encoded, validate=True).decode('utf-8-sig'), aead_only=True)
+        policy = envelope.get('cipher_policy', 'aead_only')
+        if policy not in ('aead_only', 'cbc_sha256'):
+            raise ValueError('Unsupported candidate cipher policy')
+        parsed = sanitize(base64.b64decode(encoded, validate=True).decode('utf-8-sig'),
+                          aead_only=policy == 'aead_only', cbc_sha256=policy == 'cbc_sha256')
         if parsed['endpoint_ip'] != str(global_ip(envelope.get('endpoint_ip', ''))):
             raise ValueError('Directory endpoint mismatch')
         if parsed['credentials_required']:
@@ -196,7 +200,7 @@ def probe(envelope, metadata_fetcher=None, *, private_trial=None):
     country = envelope.get('country', 'DE') if envelope['provider'] == 'vpngate' else 'DE'
     result = {'provider': envelope['provider'], 'advertised_country': country, 'shared_service': False,
               'candidate_id': parsed.get('candidate_id', 'local-fixture-or-unspecified'),
-              'endpoint_port': parsed['endpoint_port'],
+              'endpoint_port': parsed['endpoint_port'], 'cipher_policy': parsed['cipher_policy'],
               'status': 'not_connected', 'country_verified': False, 'connection_tested': True}
     namespace_created, resolver_created, moved = False, False, False
     process = None

@@ -43,6 +43,8 @@ def main():
     selected = candidates(fetch_directory(), targets)
     print('::notice title=Bounded VPNGate inspection::' + json.dumps({'candidates': len(selected), 'phone_service': False}), flush=True)
     for envelope in selected:
+        # Explicit compatibility experiment, not an automatic failure fallback.
+        envelope = envelope | {'cipher_policy': 'cbc_sha256'}
         report = probe(envelope)
         # No profiles, keys, credentials or untrusted provider messages logged.
         print('::notice title=VPNGate isolated live probe::' + json.dumps(report), flush=True)

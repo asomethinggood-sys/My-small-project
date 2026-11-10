@@ -16,7 +16,9 @@ from scripts.egress_config import global_ip
 MAX_BYTES = 128 * 1024
 
 
-def sanitize(text, *, aead_only=False):
+def sanitize(text, *, aead_only=False, cbc_sha256=False):
+    if type(cbc_sha256) is not bool or (cbc_sha256 and aead_only):
+        raise ValueError('One explicit cipher policy required')
     if type(aead_only) is not bool:
         raise ValueError('Explicit cipher negotiation policy required')
     if len(text.encode()) > MAX_BYTES or '\x00' in text:
@@ -94,6 +96,14 @@ def sanitize(text, *, aead_only=False):
                                not set(values[name][0].split(':')).issubset(safe_ciphers)):
             raise ValueError('Unsupported cipher')
     digest = values.get('auth', ['SHA256'])
+    if cbc_sha256:
+        if 'tls-auth' in blocks:
+            raise ValueError('Compatibility mode cannot rewrite control authentication')
+        if digest not in (['SHA1'], ['SHA256']):
+            raise ValueError('Unsupported compatibility digest')
+        # Explicitly request HMAC-SHA256, never the profile's legacy SHA1.
+        # A server that cannot use this MAC must fail the live data tests.
+        digest = ['SHA256']
     if aead_only and digest == ['SHA1'] and 'tls-auth' not in blocks:
         # AEAD supplies its own data-channel authentication. A legacy data-MAC
         # hint may be discarded only when CBC/fallback are entirely disabled.
@@ -157,7 +167,10 @@ def sanitize(text, *, aead_only=False):
         # peers may choose any modern AEAD instead of being pinned to 128-GCM.
         output += ['cipher AES-128-GCM', 'data-ciphers AES-256-GCM:AES-128-GCM:CHACHA20-POLY1305',
                    'data-ciphers-fallback AES-128-GCM']
-    for name in (['key-direction'] if aead_only else ['cipher', 'data-ciphers', 'key-direction']):
+    if cbc_sha256:
+        output += ['cipher AES-128-CBC', 'data-ciphers AES-128-CBC',
+                   'data-ciphers-fallback AES-128-CBC']
+    for name in (['key-direction'] if aead_only or cbc_sha256 else ['cipher', 'data-ciphers', 'key-direction']):
         if name in values:
             output.append(name + ' ' + values[name][0])
     for name, content in blocks.items():
@@ -167,4 +180,5 @@ def sanitize(text, *, aead_only=False):
     return {'config': '\n'.join(output) + '\n', 'endpoint_ip': str(address),
             'endpoint_port': int(remote[1]), 'transport': 'udp' if protocol[0].startswith('udp') else 'tcp',
             'credentials_required': 'auth-user-pass' in values,
-            'cipher_policy': 'aead_only_pinned_gcm' if aead_only else 'strict_profile'}
+            'cipher_policy': ('cbc_sha256_explicit' if cbc_sha256 else
+                              'aead_only_pinned_gcm' if aead_only else 'strict_profile')}
