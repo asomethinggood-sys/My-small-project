@@ -1,0 +1,74 @@
+name: Private bounded phone country trial
+on:
+  push:
+    branches: [arena/a78a10a4-my-small-project]
+    paths:
+      - .github/workflows/phone-country-trial.yml
+      - scripts/egress_phone_trial.py
+      - scripts/egress_path_probe.py
+      - config/trial-recipient.pub
+permissions:
+  contents: write
+concurrency:
+  group: ${{ contains(github.event.head_commit.message, '[private-country-trial]') && 'private-phone-country-trial' || format('trial-validation-{0}', github.run_id) }}
+  # A manually requested replacement must stop the previous private trial.
+  cancel-in-progress: true
+jobs:
+  trial:
+    if: contains(github.event.head_commit.message, '[private-country-trial]')
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+      - name: Validate bounded control and configuration policies
+        run: python3 -m unittest discover -s tests -p 'test_egress*.py' -q
+      - name: Install isolated trial tools
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y --no-install-recommends openvpn iptables
+          bash scripts/download-binaries.sh .runtime/bin --xray-only
+          curl -fL --retry 2 --max-time 90 https://github.com/cloudflare/cloudflared/releases/download/2026.2.0/cloudflared-linux-amd64 -o .runtime/bin/cloudflared
+          chmod 755 .runtime/bin/cloudflared
+      - name: Acquire explicitly selected official Japanese candidate
+        run: |
+          timeout 60s python3 - <<'PY'
+          import os
+          from scripts.egress_vpngate import acquire_current
+          try:
+              acquire_current('JP', os.path.join(os.environ['RUNNER_TEMP'], 'nyx-personal-upstream.json'))
+          except Exception as error:
+              known = {'Invalid official directory', 'Selected official candidate unavailable', 'Directory HTTP failure', 'Directory exceeds size budget'}
+              reason = str(error) if str(error) in known else type(error).__name__
+              print('::error title=Official candidate acquisition::'+reason, flush=True)
+              raise SystemExit(1)
+          PY
+          test -s "$RUNNER_TEMP/nyx-personal-upstream.json"
+      - name: Start verified one-owner trial and publish only encrypted provisioning
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          sudo --preserve-env=RUNNER_TEMP,GH_TOKEN,GITHUB_REPOSITORY,GITHUB_REF_NAME,GITHUB_RUN_ID python3 -u -m scripts.egress_phone_trial > "$RUNNER_TEMP/nyx-phone-trial.log" 2>&1 &
+          trial_pid=$!
+          echo "$trial_pid" > "$RUNNER_TEMP/nyx-phone-trial.pid"
+          for attempt in $(seq 1 120); do
+            if grep -q 'Private live trial::' "$RUNNER_TEMP/nyx-phone-trial.log"; then
+              cat "$RUNNER_TEMP/nyx-phone-trial.log"
+              exit 0
+            fi
+            if ! sudo -n kill -0 "$trial_pid" 2>/dev/null; then cat "$RUNNER_TEMP/nyx-phone-trial.log"; exit 1; fi
+            sleep 2
+          done
+          echo '::error::No verified private trial became ready within startup budget'
+          exit 1
+      - name: Keep only this bounded trial alive until its automatic cutoff
+        run: |
+          pid=$(cat "$RUNNER_TEMP/nyx-phone-trial.pid")
+          for attempt in $(seq 1 280); do
+            if ! sudo -n kill -0 "$pid" 2>/dev/null; then cat "$RUNNER_TEMP/nyx-phone-trial.log"; exit 0; fi
+            sleep 10
+          done
+          sudo kill "$pid"
+          exit 1
+      - name: Remove private temporary inputs
+        if: always()
+        run: sudo rm -rf "$RUNNER_TEMP/nyx-personal-upstream.json" "$RUNNER_TEMP/nyx-private-runtime"

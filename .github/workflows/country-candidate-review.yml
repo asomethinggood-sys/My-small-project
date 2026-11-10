@@ -1,0 +1,18 @@
+name: Bounded alternative-country candidate review
+on:
+  push:
+    branches: [arena/a78a10a4-my-small-project]
+    paths: [.github/workflows/country-candidate-review.yml, scripts/egress_openvpn.py, scripts/egress_vpngate_inventory.py]
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  review:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - name: Unit-test bounded snapshot accounting
+        run: python3 -m unittest discover -s tests -p 'test_egress_vpngate_inventory.py' -v
+      - name: Inspect one official snapshot (no connection or profile publication)
+        run: timeout 60s python3 -m scripts.egress_vpngate_inventory --live

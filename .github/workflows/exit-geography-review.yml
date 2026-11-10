@@ -1,0 +1,37 @@
+name: Cross-check disputed public exit geography
+on:
+  push:
+    branches: [arena/a78a10a4-my-small-project]
+    paths: [.github/workflows/exit-geography-review.yml]
+permissions:
+  contents: read
+jobs:
+  geography:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 3
+    steps:
+      - name: Independent lookups of observed upstream exit, not phone residential IP
+        run: |
+          python3 - <<'PY'
+          import json,urllib.request,urllib.error
+          ip='51.75.145.220'
+          sources={
+            'ipapi.co':'https://ipapi.co/'+ip+'/json/',
+            'country.is':'https://api.country.is/'+ip,
+            'iplocation.net':'https://api.iplocation.net/?ip='+ip,
+            'ipwho.is':'https://ipwho.is/'+ip,
+            'ipinfo.io':'https://ipinfo.io/'+ip+'/json',
+          }
+          fields={'ip','country','country_code','country_code2','country_name','region','region_name','city','org','success','error','response_code'}
+          for source,url in sources.items():
+              try:
+                  with urllib.request.urlopen(urllib.request.Request(url,headers={'User-Agent':'Nyx-exit-verification/1'}),timeout=8) as response:
+                      raw=response.read(32769)
+                      if len(raw)>32768:raise ValueError('oversized')
+                      data=json.loads(raw)
+                      report={k:v for k,v in data.items() if k in fields and isinstance(v,(str,bool,int))}
+              except Exception as error:
+                  report={'unavailable':type(error).__name__,'http_status':getattr(error,'code',None)}
+              text=json.dumps(report)
+              print('::notice title=Exit geography '+source+'::'+text.replace('%','%25').replace('\r','%0D').replace('\n','%0A'))
+          PY

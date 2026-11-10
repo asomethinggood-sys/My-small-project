@@ -1,0 +1,214 @@
+name: Nyx Android client
+on:
+  push:
+    paths: [android/**, .github/workflows/android.yml, scripts/egress_gateway.py, scripts/egress_control.py, scripts/egress_ingress.py, scripts/egress_sessions.py, scripts/egress_stream.py, scripts/egress_supervisor.py]
+  pull_request:
+    paths: [android/**, .github/workflows/android.yml]
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: android-${{ github.ref }}
+  cancel-in-progress: true
+jobs:
+  build:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 40
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '21'
+      - name: Android SDK
+        run: '"$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" "platforms;android-35" "build-tools;35.0.0"'
+      - uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '8.11.1'
+      - name: Fetch checksum-pinned Xray engine
+        run: bash android/scripts/fetch-core.sh
+      - name: Rust tests, JNI boundary tests, JVM tests, lint and emulator APK
+        working-directory: android
+        run: |
+          set -o pipefail
+          gradle --no-daemon -PtargetAbi=x86_64 :app:testDebugUnitTest :app:lintDebug :app:assembleDebug 2>&1 | tee build-log.txt
+      - name: Configure private stable signing if provisioned
+        if: github.event_name != 'pull_request' && github.ref == 'refs/heads/arena/a78a10a4-my-small-project'
+        env:
+          CONTINUUM_SIGNING_KEY_B64: ${{ secrets.CONTINUUM_SIGNING_KEY_B64 }}
+          CONTINUUM_STORE_PASSWORD: ${{ secrets.CONTINUUM_STORE_PASSWORD }}
+          CONTINUUM_KEY_ALIAS: ${{ secrets.CONTINUUM_KEY_ALIAS }}
+          CONTINUUM_KEY_PASSWORD: ${{ secrets.CONTINUUM_KEY_PASSWORD }}
+        run: python3 android/scripts/configure-signing.py
+      - name: Build directly loadable 16 KB-aligned ARM64 candidate APK
+        working-directory: android
+        run: |
+          gradle --no-daemon -PtargetAbi=arm64-v8a :app:assembleRelease :app:lintRelease
+          mkdir -p release
+          cp app/build/outputs/apk/release/app-release.apk release/nyx-0.6.0-arm64.apk
+          "$ANDROID_HOME/build-tools/35.0.0/apksigner" verify --verbose --print-certs release/nyx-0.6.0-arm64.apk > release/SIGNING-CERTIFICATE.txt
+          "$ANDROID_HOME/build-tools/35.0.0/apksigner" verify --min-sdk-version 23 --max-sdk-version 23 release/nyx-0.6.0-arm64.apk
+          "$ANDROID_HOME/build-tools/35.0.0/apksigner" verify --min-sdk-version 26 --max-sdk-version 27 release/nyx-0.6.0-arm64.apk
+          "$ANDROID_HOME/build-tools/35.0.0/apksigner" verify --min-sdk-version 28 --max-sdk-version 35 release/nyx-0.6.0-arm64.apk
+          "$ANDROID_HOME/build-tools/35.0.0/zipalign" -c -P 16 4 release/nyx-0.6.0-arm64.apk
+          python3 scripts/check-apk.py release/nyx-0.6.0-arm64.apk
+          python3 - <<'PY'
+          from pathlib import Path
+          import zipfile, hashlib, os
+          p=Path('release/nyx-0.6.0-arm64.apk')
+          with zipfile.ZipFile(p) as z:
+              native=[n for n in z.namelist() if n.startswith('lib/') and n.endswith('.so')]
+              assert 'lib/arm64-v8a/libcontinuum_core.so' in native
+              assert native and all(n.startswith('lib/arm64-v8a/') for n in native),native
+              assert all(z.getinfo(n).compress_type==zipfile.ZIP_STORED for n in native)
+          size=p.stat().st_size
+          mode=os.environ.get('NYX_SIGNING_MODE','debug_key_not_for_distribution')
+          text=f'ARM64 APK: {size:,} bytes ({size/1000000:.2f} MB; {size/1048576:.2f} MiB).\nSHA256: {hashlib.sha256(p.read_bytes()).hexdigest()}\nSigning: {mode}\n'
+          print('::notice title=APK size and signing::'+text.replace('\n','%0A'))
+          Path('release/APK-SIZE.txt').write_text(text)
+          PY
+      - name: Build universal four-ABI release with the same certificate
+        working-directory: android
+        run: |
+          gradle --no-daemon -PtargetAbi=universal :app:assembleRelease
+          cp app/build/outputs/apk/release/app-release.apk release/nyx-0.6.0-universal.apk
+          python3 scripts/check-apk.py release/nyx-0.6.0-universal.apk universal
+          "$ANDROID_HOME/build-tools/35.0.0/apksigner" verify --verbose --print-certs release/nyx-0.6.0-universal.apk > release/UNIVERSAL-SIGNING.txt
+          "$ANDROID_HOME/build-tools/35.0.0/zipalign" -c -P 16 4 release/nyx-0.6.0-universal.apk
+          sha256sum release/*.apk > release/SHA256SUMS
+          wc -c release/*.apk > release/PACKAGE-SIZES.txt
+      - name: Preserve exact universal candidate for independent installation matrix
+        uses: actions/upload-artifact@v4
+        with:
+          name: universal-candidate
+          retention-days: 7
+          path: |
+            android/release/nyx-0.6.0-universal.apk
+            android/release/SHA256SUMS
+            android/release/PACKAGE-SIZES.txt
+      - name: Temporary protocol and website compatibility fixtures
+        run: |
+          python3 -u android/scripts/vpn-fixture.py > "$RUNNER_TEMP/fixture.log" 2>&1 &
+          fixture_pid=$!
+          for attempt in $(seq 1 150); do
+            if ! kill -0 "$fixture_pid" 2>/dev/null; then cat "$RUNNER_TEMP/fixture.log"; exit 1; fi
+            if grep -q FIXTURE_READY "$RUNNER_TEMP/fixture.log"; then exit 0; fi
+            sleep 2
+          done
+          cat "$RUNNER_TEMP/fixture.log"
+          exit 1
+      - name: Enable KVM
+        run: |
+          echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' | sudo tee /etc/udev/rules.d/99-kvm4all.rules
+          sudo udevadm control --reload-rules
+          sudo udevadm trigger --name-match=kvm
+      - name: Real TUN DNS, HTTP, HTTPS, transfers, UDP and lifecycle regressions
+        run: |
+          set -o pipefail
+          bash android/scripts/emulator-session.sh 2>&1 | tee android/emulator-boot.log
+      - name: Reviewable emulator UI previews
+        run: |
+          python3 -m pip install --quiet Pillow==11.3.0
+          python3 android/scripts/ui-preview.py
+      - name: Corresponding source and licenses
+        run: |
+          git archive --format=tar.gz --output=android/release/nyx-source.tar.gz HEAD android scripts config tests
+          cp android/THIRD_PARTY.md android/LICENSE* android/release/
+          cp android/third-party/libv2ray-sources.jar android/release/
+          cp android/network-report.txt android/release/
+      - name: Publish only on explicit release request after routing acceptance
+        # Publication stays disabled until all compatibility jobs and live routing acceptance pass.
+        if: ${{ false }}
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          tag="nyx-0.6.0-candidate-${GITHUB_RUN_NUMBER}"
+          gh release create "$tag" android/release/* --target "$GITHUB_SHA" --prerelease --title "Nyx VPN 0.6 candidate · build ${GITHUB_RUN_NUMBER}" --notes "Android 8+ ARM64. Separate app.nyx.vpn package: does not replace Continuum. Default project subscription unchanged. Custom night interface, reduced-motion-aware connection animations, searchable 30-country discovery and provider/capability details. Includes authenticated country selection and lease renewal for a provisioned HTTPS service; discovery alone cannot authorize routes. No public shared-use provider pool is deployed by this build. Uncompressed 16 KB-aligned native libraries and v1/v2/v3 signing; physical POCO installation still requires validation. Rust JNI handles scheduling, cancellation, backoff, catalog eligibility and presentation policy; Android UI/orchestration remain Java and Xray remains Go. NOT an all-Rust tunnel engine or completed multi-provider deployment. Stable signing requires privately provisioned Actions secrets; APK-SIZE.txt states the actual mode. Rust/JVM/UI tests and real API35 x86_64 TUN regressions pass before publication. Physical ARM, mobile handoff, long-duration stability and Tehran latency remain unverified."
+      - name: Failure diagnostics
+        if: failure()
+        run: python3 android/scripts/ci-diagnostics.py
+      - name: Reports and measurements
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: android-validation-${{ github.run_number }}
+          retention-days: 7
+          path: |
+            android/app/build/reports/
+            android/app/build/outputs/androidTest-results/
+            android/build-log.txt
+            android/emulator-log.txt
+            android/emulator-boot.log
+            android/emulator-runtime.log
+            android/device-crash.txt
+            android/network-report.txt
+            android/continuum-screen.png
+            android/release/APK-SIZE.txt
+            android/release/SIGNING-CERTIFICATE.txt
+            android/release/INSTALLATION.txt
+            android/release/nyx-0.6.0-arm64.apk
+            android/release/RELEASE-LAUNCH.txt
+  compatibility:
+    needs: build
+    if: always() && needs.build.result != 'cancelled'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - api: 26
+            arch: x86
+            image: google_apis
+          - api: 29
+            arch: x86_64
+            image: google_apis
+          - api: 35
+            arch: x86_64
+            image: google_apis
+          - api: 35
+            arch: x86_64
+            image: google_apis_ps16k
+          - api: 36
+            arch: x86_64
+            image: google_apis
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '21'
+      - uses: actions/download-artifact@v4
+        with:
+          name: universal-candidate
+          path: android/release
+      - name: Enable KVM
+        run: |
+          echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' | sudo tee /etc/udev/rules.d/99-kvm4all.rules
+          sudo udevadm control --reload-rules
+          sudo udevadm trigger --name-match=kvm
+      - name: Native release install, upgrade and launch on supported Android versions
+        env:
+          AUDIT_API: ${{ matrix.api }}
+          AUDIT_ARCH: ${{ matrix.arch }}
+          AUDIT_IMAGE: ${{ matrix.image }}
+        run: bash android/scripts/compatibility.sh
+      - name: Compatibility diagnostics
+        if: always()
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          for name in ['install.txt','update.txt','page-size.txt','MainActivity.txt','crashes.txt','accessibility.txt']:
+              p=Path('android/compatibility')/name
+              text=p.read_text(errors='replace')[-3000:] if p.exists() else 'Not reached'
+              print('::notice title=Compatibility '+name+'::'+text.replace('%','%25').replace('\r','%0D').replace('\n','%0A'))
+          PY
+      - name: Compatibility results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: compatibility-api-${{ matrix.api }}-${{ matrix.arch }}-${{ matrix.image }}
+          path: android/compatibility/
+          retention-days: 7

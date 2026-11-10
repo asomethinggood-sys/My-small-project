@@ -1,0 +1,44 @@
+# Android compatibility contract
+
+## Intended support, not an all-device guarantee
+
+Nyx targets Android 8.0 (API 26) and later. The build now supports ARM64 (`arm64-v8a`), 32-bit ARMv7 (`armeabi-v7a`), Intel/AMD 64-bit (`x86_64`) and 32-bit Intel (`x86`). Android versions below API 26 and other architectures are unsupported. OEM restrictions, work-profile policies and device-specific defects can still prevent installation or VPN operation.
+
+The universal APK contains all four native architectures, including both Rust JNI and Go/Xray. It is a standalone APK, not a split APK requiring an installer bundle. Android selects the appropriate native libraries. The ARM64-only APK remains a smaller alternative for modern phones. A universal, directly loadable package is necessarily much larger than the old approximately 20 MB ARM64 compressed preview. CI records exact sizes and SHA-256 values; do not advertise a guessed download size.
+
+## Validation gates
+
+- ZIP integrity and completeness: both native libraries must exist for every requested ABI.
+- ELF architecture and load-segment checks: 16 KB-compatible 64-bit libraries and 4 KB-compatible 32-bit libraries.
+- Uncompressed, page-aligned APK native payloads.
+- APK signature verification; stable signing is still required for reliable upgrades between independently built releases.
+- Normal installation of the exact universal release, without ABI overrides, on API 26/x86 and API 29, 35, 36/x86_64.
+- Additional API 35/x86_64 16 KB system-image run verifies the actual device page size.
+- Same-signer reinstall without clearing app data, release-mode home-screen startup (including Rust JNI), and actual UI navigation into the non-exported country screen.
+- Separate full Android TUN, authenticated country-session, renewal, switching and disconnect tests remain required. Package-manager acceptance is not a substitute for VPN traffic tests.
+
+All these gates passed in [run 42687844848](https://github.com/asomethinggood-sys/My-small-project/actions/runs/42687844848), source `0af2ec3c3e2bcc3628c0292676bbe4915e21f9cf`: all five compatibility jobs and the Android build/integration job are green. The 16 KB image reported `PAGE_SIZE=16384`. Counts: **21 Rust, 55 JVM and 10 Android instrumentation tests**. These results apply to this exact candidate, not arbitrary later builds. Intel emulator execution is not physical ARM execution. The original POCO/HyperOS installation error remains unconfirmed on hardware.
+
+| Exact candidate | Bytes | SHA-256 |
+|---|---:|---|
+| Universal | 143,832,708 | `c4a49e5955ab1b0cb23ba433d21eb6e2eb23dcf1440cf638e724ed3bde0befe5` |
+| ARM64 | 41,431,421 | `734b95c0ac5757c5a8908ab6d055f101f14cdc3aa4a998de42bf635abfe056a7` |
+
+The artifacts use the same ephemeral release certificate within this build. Same-build reinstall passed; cross-build update compatibility is not established. They remain CI candidates, not a published completed country service.
+
+## Supervised-routing rerun
+
+[Run 42690395450](https://github.com/asomethinggood-sys/My-small-project/actions/runs/42690395450), source `0dda72ef98120da4d0b39e752ad799028d38747d`, also passed the full build and all five compatibility jobs, with the new pool supervisor wired into the authenticated Android fixture. Counts remain **21 Rust, 55 JVM, 10 Android instrumentation**. Backend verification [42690394621](https://github.com/asomethinggood-sys/My-small-project/actions/runs/42690394621) passed; the local Python suite now has **121 tests**.
+
+| Supervised candidate | Bytes | SHA-256 |
+|---|---:|---|
+| Universal | 143,832,708 | `8743955a68c036697a3266dcde08ee72d1309d1f1351774118648a2db34a043e` |
+| ARM64 | 41,431,424 | `e6a1e75bed61acd360136c8ccfd1a0ef9e27f5dba8a1ed117ac4c84424adc7d6` |
+
+These are different signed artifacts from the earlier table; do not mix their hashes or assume signer continuity.
+
+## Service and release limits
+
+Country discovery lists 30 targets, not 30 working exits. Synthetic German/French labels in bounded test fixtures are not geographic evidence. No approved public country service is deployed. Universal packaging does not solve provider provisioning or runtime permission.
+
+Publication is disabled while these acceptance gates remain incomplete. Candidate credentials and signing keys must never be included in artifacts. An ephemeral release signer can validate a single build and same-build reinstall, but it cannot promise updates from earlier or future builds signed with a different certificate.

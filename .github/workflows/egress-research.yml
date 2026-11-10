@@ -1,0 +1,161 @@
+name: Nyx bounded backend verification
+on:
+  push:
+    branches: [arena/a78a10a4-my-small-project]
+    paths:
+      - .github/workflows/egress-research.yml
+      - scripts/egress*.py
+      - scripts/build-wireguard-tools.sh
+      - scripts/egress*.mjs
+      - scripts/egress*.sh
+      - tests/egress*.py
+      - tests/egress*.mjs
+      - tests/test_egress*.py
+      - config/egress*.json
+  workflow_dispatch:
+    inputs:
+      live_provider_test:
+        description: Run the bounded six-sample private provider comparison
+        type: boolean
+        default: false
+permissions:
+  contents: read
+concurrency:
+  group: nyx-egress-research-${{ github.ref }}
+  cancel-in-progress: false
+jobs:
+  psiphon-local:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - name: Fetch pinned upstream release-candidate tools for local fixture
+        run: bash scripts/egress-psiphon-tools.sh
+      - name: Real local OSSH transport and wrong-key rejection
+        run: |
+          mkdir -p .runtime/egress
+          sudo python3 tests/egress_psiphon_kernel.py .runtime/psiphon-bin/client .runtime/psiphon-bin/server | tee .runtime/egress/kernel-psiphon.json
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: nyx-psiphon-local-${{ github.run_id }}
+          retention-days: 3
+          path: .runtime/egress/kernel-psiphon.json
+  browser-acquisition:
+    if: ${{ (github.event_name == 'push' && contains(github.event.head_commit.message, '[provider-test]')) || (github.event_name == 'workflow_dispatch' && inputs.live_provider_test) }}
+    needs: kernel
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - name: Test browser acquisition policy
+        run: node --test tests/egress_browser.test.mjs
+      - name: Install pinned browser automation
+        run: |
+          npm install --prefix .runtime/browser --no-audit --no-fund playwright@1.56.1
+          .runtime/browser/node_modules/.bin/playwright install --with-deps chromium
+      - name: Install OpenVPN for one bounded private test
+        run: |
+          sudo apt-get install -y --no-install-recommends openvpn iptables
+          sudo python3 tests/egress_tun_migration.py
+      - name: Compare bounded German candidates on this runner (no public service)
+        run: timeout 930s python3 -m scripts.egress_batch
+      - name: Summarize comparison separately from per-probe notices
+        if: always()
+        run: python3 -m scripts.egress_batch --report-only .runtime/egress/comparison.json
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: nyx-browser-${{ github.run_id }}
+          retention-days: 3
+          path: |
+            .runtime/egress/vpnbook-browser.json
+            .runtime/egress/comparison.json
+  kernel:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - name: Unit tests
+        run: python3 -m unittest discover -s tests -p 'test_egress*.py' -v
+      - name: Install firewall tooling
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y --no-install-recommends nftables iptables openvpn
+      - name: Build pinned WireGuard tooling
+        run: bash scripts/build-wireguard-tools.sh
+      - name: Fetch checksum-pinned Xray for combined routing test
+        run: bash scripts/download-binaries.sh .runtime/bin --xray-only
+      - name: Real encrypted kernel and lifecycle tests
+        run: |
+          mkdir -p .runtime/egress
+          sudo python3 tests/egress_openvpn_kernel.py | tee .runtime/egress/kernel-openvpn.json
+          sudo python3 tests/egress_pool_kernel.py .runtime/tool-src/wireguard-tools/src/wg .runtime/bin/xray | tee .runtime/egress/kernel-pool-manager.json
+          sudo python3 tests/egress_kernel.py --firewall legacy --wireguard .runtime/tool-src/wireguard-tools/src/wg | tee .runtime/egress/kernel-legacy.json
+          sudo python3 tests/egress_kernel.py --firewall nft --wireguard .runtime/tool-src/wireguard-tools/src/wg | tee .runtime/egress/kernel-nft.json
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: nyx-kernel-${{ github.run_id }}
+          retention-days: 3
+          path: .runtime/egress/kernel-*.json
+  xray:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - name: Fetch checksum-pinned Xray
+        run: bash scripts/download-binaries.sh .runtime/bin --xray-only
+      - name: Validate and exercise VLESS baseline (no public deployment)
+        run: |
+          python3 scripts/generate.py --host vpn.example.com
+          .runtime/bin/xray run -test -c .runtime/xray.json
+          .runtime/bin/xray run -test -c .runtime/client-test.json
+          python3 tests/integration.py
+  sources:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+      - name: Fetch bounded official-provider metadata
+        run: python3 scripts/egress_sources.py
+      - name: Inspect one advertised German OpenVPN bundle (no connection)
+        run: timeout 90s python3 -m scripts.egress_vpnbook
+      - name: Fetch and parse live directory
+        id: directory
+        continue-on-error: true
+        run: timeout 60s python3 scripts/egress_catalog.py --live
+      - name: Publish sanitized measurements to job summary
+        if: always()
+        run: python3 scripts/egress_report.py
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: nyx-sources-${{ github.run_id }}
+          retention-days: 3
+          path: |
+            .runtime/egress/catalog.json
+            .runtime/egress/sources.json
+            .runtime/egress/vpnbook-inspection.json
+      - name: Publish public metadata only for Nyx Locations
+        if: ${{ false }} # Do not overwrite the shared public catalog from a development branch.
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          python3 - <<'PY'
+          import json
+          from pathlib import Path
+          c=json.loads(Path('.runtime/egress/catalog.json').read_text())
+          assert c['purpose']=='research_metadata_not_connection_profiles'
+          assert c['routing_implemented'] is False
+          assert all(r['selectable'] is False and r['verified_servers']==0 for r in c['countries'])
+          PY
+          if ! gh release view nyx-research-catalog >/dev/null 2>&1; then
+            gh release create nyx-research-catalog --target "$GITHUB_SHA" --prerelease --title 'Nyx discovery metadata · not VPN profiles' --notes 'Public discovery snapshot, expires after 15 minutes. No selectable country exits or credentials. The default VPN release is unchanged.'
+          fi
+          gh release upload nyx-research-catalog .runtime/egress/catalog.json --clobber
+      - name: Preserve discovery failure in job status
+        if: steps.directory.outcome == 'failure'
+        run: exit 1

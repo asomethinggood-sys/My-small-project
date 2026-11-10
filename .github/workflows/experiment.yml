@@ -1,0 +1,14 @@
+name: Tunnel transport experiment (disabled)
+# Historical experiment printed plaintext connection URIs and uploaded profiles.
+# It must not auto-start on a source push or publish credentials. A replacement
+# must use private provisioning and be deliberately reviewed before enabling.
+on:
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  disabled:
+    runs-on: ubuntu-latest
+    timeout-minutes: 1
+    steps:
+      - run: echo 'Disabled: historical experiment exposed plaintext profiles. No tunnel was started.'

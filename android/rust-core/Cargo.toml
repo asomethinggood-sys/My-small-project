@@ -1,0 +1,18 @@
+[package]
+name = "continuum_core"
+version = "0.5.0"
+edition = "2021"
+license = "GPL-3.0-only"
+publish = false
+
+[lib]
+crate-type = ["cdylib", "rlib"]
+
+[profile.release]
+lto = true
+codegen-units = 1
+opt-level = "s"
+strip = true
+panic = "abort"
+
+# Deliberately dependency-free for the first migration stage.
