@@ -10,7 +10,8 @@ try {
     $config = @{
         log = @{loglevel='debug'; error='fixture/server-detail.log'}
         inbounds = @(@{listen='127.0.0.1';port=23081;protocol='shadowsocks';settings=@{method='aes-128-gcm';password='continuum-ci-only-password';network='tcp,udp'}})
-        outbounds = @(@{protocol='freedom';settings=@{redirect='127.0.0.1:23080'}})
+        # Local fixture only: permit exactly the owned echo service, not general private-network access.
+        outbounds = @(@{protocol='freedom';settings=@{redirect='127.0.0.1:23080';finalRules=@(@{action='allow';network='tcp,udp';ip=@('127.0.0.1/32');port='23080'})}})
     }
     $config | ConvertTo-Json -Depth 15 | Set-Content fixture/server.json
     $fixture = Start-Process python -ArgumentList 'windows/scripts/fixture.py' -PassThru -WindowStyle Hidden
