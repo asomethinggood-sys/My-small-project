@@ -8,7 +8,7 @@ try {
     & $core run -test -config fixture/full-tun.json
     if ($LASTEXITCODE -ne 0) { throw 'Full TUN configuration rejected by pinned engine' }
     $config = @{
-        log = @{loglevel='warning'}
+        log = @{loglevel='debug'; error='fixture/server-detail.log'}
         inbounds = @(@{listen='127.0.0.1';port=23081;protocol='shadowsocks';settings=@{method='aes-128-gcm';password='continuum-ci-only-password';network='tcp,udp'}})
         outbounds = @(@{protocol='freedom';settings=@{redirect='127.0.0.1:23080'}})
     }
@@ -16,6 +16,9 @@ try {
     $fixture = Start-Process python -ArgumentList 'windows/scripts/fixture.py' -PassThru -WindowStyle Hidden
     $server = Start-Process $core -ArgumentList 'run -config fixture/server.json' -PassThru -WindowStyle Hidden -RedirectStandardError fixture/server.log
     Start-Sleep 2
+    if ($fixture.HasExited -or $server.HasExited) { throw 'Local fixture process failed to start' }
+    $direct = & curl.exe --noproxy '*' --silent --max-time 3 http://127.0.0.1:23080/
+    if ($LASTEXITCODE -ne 0 -or $direct -ne 'continuum-windows-route-fixture') { throw 'Local HTTP fixture is not ready' }
     New-Item -ItemType Directory -Force windows/Tests/bin/Release/net8.0-windows/engine | Out-Null
     Copy-Item "$AppDirectory/engine/*" windows/Tests/bin/Release/net8.0-windows/engine -Force
     dotnet run --project windows/Tests/Tests.csproj -c Release --no-build -- --engine-lifecycle 2>&1 | Tee-Object -Variable lifecycleLog
@@ -59,9 +62,11 @@ try {
 } catch {
     $detail = ($_.ToString() + ' at ' + $_.ScriptStackTrace).Replace('%','%25').Replace("`r",'%0D').Replace("`n",'%0A')
     Write-Output "::error title=Windows smoke failure::$detail"
-    if (Test-Path fixture/client.log) {
-        $tail = ((Get-Content fixture/client.log -Tail 12) -join "`n").Replace('%','%25').Replace("`r",'%0D').Replace("`n",'%0A')
-        Write-Output "::notice title=Local fixture engine diagnostics::$tail"
+    foreach ($log in @('fixture/client.log','fixture/server.log','fixture/server-detail.log')) {
+        if (Test-Path $log) {
+            $tail = ((Get-Content $log -Tail 18) -join "`n").Replace('%','%25').Replace("`r",'%0D').Replace("`n",'%0A')
+            Write-Output "::notice title=Local fixture engine diagnostics::$log $tail"
+        }
     }
     throw
 } finally {

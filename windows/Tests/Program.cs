@@ -77,7 +77,7 @@ if (args.Contains("--engine-lifecycle")) {
     using var engine = new Engine();
     await engine.StartAsync(p, false, 1400, CancellationToken.None);
     Assert(engine.Running);
-    await engine.HealthAsync(CancellationToken.None, "http://127.0.0.1:23080/");
+    await engine.HealthAsync(CancellationToken.None, "http://198.18.0.10:23080/");
     engine.Stop(); Assert(!engine.Running);
     Console.WriteLine("PASS Owned engine start, proxied request and stop");
 }
