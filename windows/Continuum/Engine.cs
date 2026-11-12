@@ -77,15 +77,14 @@ public sealed class Engine : IDisposable
                     if (Native.AttachConsole((uint)process.Id))
                     {
                         Native.SetConsoleCtrlHandler(IntPtr.Zero, true);
-                        Native.GenerateConsoleCtrlEvent(0, 0);
-                        process.WaitForExit(4000);
-                        Native.FreeConsole();
-                        Native.SetConsoleCtrlHandler(IntPtr.Zero, false);
+                        try { Native.GenerateConsoleCtrlEvent(0, 0); process.WaitForExit(4000); }
+                        finally { Native.FreeConsole(); Native.SetConsoleCtrlHandler(IntPtr.Zero, false); }
                     }
                     if (!process.HasExited) { process.Kill(true); process.WaitForExit(4000); }
                 }
             }
             catch (InvalidOperationException) { }
+            catch (System.ComponentModel.Win32Exception) { /* The owned job is closed below even if the process races exit. */ }
             finally { process.Dispose(); process = null; }
         }
         if (job != IntPtr.Zero) { Native.CloseHandle(job); job = IntPtr.Zero; }

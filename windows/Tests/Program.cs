@@ -80,6 +80,10 @@ if (args.Contains("--engine-lifecycle")) {
     await engine.HealthAsync(CancellationToken.None, "http://198.18.0.10:23080/");
     engine.Stop(); Assert(!engine.Running);
     Console.WriteLine("PASS Owned engine start, proxied request and stop");
+    using var cancelled = new CancellationTokenSource(); cancelled.Cancel();
+    try { await engine.StartAsync(p, false, 1400, cancelled.Token); throw new Exception("Cancelled start succeeded"); }
+    catch (OperationCanceledException) { Assert(!engine.Running); }
+    Console.WriteLine("PASS Cancelled engine startup leaves no owned process running");
 }
 sealed class Stub(Func<HttpRequestMessage, CancellationToken, Task<HttpResponseMessage>> send) : HttpMessageHandler
 { protected override Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken) => send(request, cancellationToken); }

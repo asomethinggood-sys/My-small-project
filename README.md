@@ -5,6 +5,12 @@ The existing US GitHub runner reportedly exceeds 350 ms. That is a user report,
 not a measurement made by this project. **No Tehran-side measurements or live VPS
 deployment have been performed for this change. Temporary runner-side experiments are documented below; no permanent endpoint is supplied.**
 
+## Continuum for Windows 10 / 11
+
+A native Windows desktop version of **normal Continuum**, separate from Nyx, is implemented in [`windows/`](windows/README.md). It preserves the original subscription and uses a real Xray/Wintun device-wide tunnel, with Connect/Disconnect, tray controls, imported profiles, automatic checks and DPAPI-protected settings.
+
+[Windows downloads and validation](docs/continuum-windows-results.md). Extract the entire architecture-matched ZIP and open `Continuum.exe`; administrator permission is required. .NET is bundled. Preview app binaries are unsigned. The Windows Server CI fixture is not a physical Windows 10/11 compatibility certification or a full leak audit. No existing server workflow was changed by this port.
+
 ## Standalone Android app — Continuum
 
 A native Android client is now implemented in [`android/`](android/README.md),
