@@ -1,1 +1,1 @@
-vless://9eed8780-4328-4813-8e72-9df0e277fd9e@ste-appendix-prediction-radio.trycloudflare.com:443?encryption=none&security=tls&sni=ste-appendix-prediction-radio.trycloudflare.com&type=ws&host=ste-appendix-prediction-radio.trycloudflare.com&path=%2F29f1316067964e52b5b097edf727dd58#ArenaVPN
+vless://9ccc5436-3ac2-4ee4-ab32-3d145c6278cc@mill-italic-economies-district.trycloudflare.com:443?encryption=none&security=tls&sni=mill-italic-economies-district.trycloudflare.com&type=ws&host=mill-italic-economies-district.trycloudflare.com&path=%2F311cc6fd720941fd8d6104db8e50cdf3#ArenaVPN
