@@ -16,3 +16,10 @@ android/emulator-log.txt
 android/continuum-screen.png
 android/emulator-boot.log
 android/emulator-runtime.log
+windows/**/bin/
+windows/**/obj/
+package-x64/
+package-arm64/
+fixture/
+release/
+windows-desktop.png
