@@ -1,1 +1,1 @@
-vless://5faaeded-8075-44d0-ba19-7d6635bdb2d9@room-minolta-repeat-appeals.trycloudflare.com:443?encryption=none&security=tls&sni=room-minolta-repeat-appeals.trycloudflare.com&type=ws&host=room-minolta-repeat-appeals.trycloudflare.com&path=%2F4c624ec5664f416fa9faba40eae44740#ArenaVPN
+vless://9eed8780-4328-4813-8e72-9df0e277fd9e@ste-appendix-prediction-radio.trycloudflare.com:443?encryption=none&security=tls&sni=ste-appendix-prediction-radio.trycloudflare.com&type=ws&host=ste-appendix-prediction-radio.trycloudflare.com&path=%2F29f1316067964e52b5b097edf727dd58#ArenaVPN
