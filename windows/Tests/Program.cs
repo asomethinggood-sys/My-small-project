@@ -81,6 +81,7 @@ if (args.Contains("--write-fixture")) {
     File.WriteAllText("fixture/client.json", profile.Config(false, 23082).ToJsonString());
     File.WriteAllText("fixture/full-tun.json", profile.Config(true, 23082).ToJsonString());
     var tun = profile.Config(true, 23082);
+    tun["log"] = new JsonObject { ["loglevel"] = "warning", ["error"] = "fixture/tun-detail.log" };
     var tunSettings = tun["inbounds"]![1]!["settings"]!;
     tunSettings["autoSystemRoutingTable"] = new JsonArray("198.18.0.0/15");
     tunSettings["autoSystemWfpBlockLeak"] = new JsonArray(); // Scope fixture traffic, never hijack CI control traffic.

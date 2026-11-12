@@ -2,6 +2,15 @@ param([string]$AppDirectory = 'package-x64')
 $ErrorActionPreference = 'Stop'
 $core = (Resolve-Path "$AppDirectory/engine/xray.exe").Path
 $fixture = $null; $server = $null; $client = $null; $app = $null
+function Wait-TestTunnel($child) {
+    for ($attempt = 0; $attempt -lt 30; $attempt++) {
+        if ($child.HasExited) { throw 'Test tunnel process exited before readiness' }
+        $marker = & curl.exe --noproxy '*' --silent --max-time 2 http://198.18.0.10:23080/
+        if ($LASTEXITCODE -eq 0 -and $marker -eq 'continuum-windows-route-fixture') { return }
+        Start-Sleep 1
+    }
+    throw 'Test tunnel did not pass its actual route readiness check'
+}
 try {
     dotnet run --project windows/Tests/Tests.csproj -c Release -- --write-fixture
     if ($LASTEXITCODE -ne 0) { throw 'Unit tests failed' }
@@ -33,8 +42,7 @@ try {
         throw 'App engine lifecycle test failed'
     }
     $client = Start-Process $core -ArgumentList 'run -config fixture/legacy-dns-tun.json' -PassThru -WindowStyle Hidden -RedirectStandardError fixture/legacy.log
-    Start-Sleep 3
-    if ($client.HasExited -or !(Get-NetRoute -DestinationPrefix '198.18.0.0/15' -ErrorAction SilentlyContinue)) { throw 'Legacy DNS comparison tunnel not ready' }
+    Wait-TestTunnel $client
     python windows/scripts/network-check.py --baseline-drop
     if ($LASTEXITCODE -ne 0) { throw 'Legacy DNS reproduction failed' }
     Stop-Process -Id $client.Id -Force; $client.WaitForExit(); $client = $null
@@ -60,8 +68,7 @@ try {
     if (Get-NetRoute -DestinationPrefix '198.18.0.0/15' -ErrorAction SilentlyContinue) { throw 'Fixture tunnel route remained after engine exit' }
     Write-Output 'PASS Scoped tunnel route removed on process exit'
     $client = Start-Process $core -ArgumentList 'run -config fixture/fallback-tun.json' -PassThru -WindowStyle Hidden -RedirectStandardError fixture/fallback.log
-    Start-Sleep 3
-    if ($client.HasExited) { throw 'Fallback resolver test engine exited' }
+    Wait-TestTunnel $client
     python windows/scripts/network-check.py --dns-only
     if ($LASTEXITCODE -ne 0) { throw 'Secondary DoH did not recover from unreachable primary' }
     Stop-Process -Id $client.Id -Force; $client.WaitForExit(); $client = $null
@@ -86,7 +93,7 @@ try {
 } catch {
     $detail = ($_.ToString() + ' at ' + $_.ScriptStackTrace).Replace('%','%25').Replace("`r",'%0D').Replace("`n",'%0A')
     Write-Output "::error title=Windows smoke failure::$detail"
-    foreach ($log in @('fixture/client.log','fixture/server.log','fixture/server-detail.log')) {
+    foreach ($log in @('fixture/client.log','fixture/server.log','fixture/server-detail.log','fixture/legacy.log','fixture/tun-detail.log','fixture/fallback.log')) {
         if (Test-Path $log) {
             $tail = ((Get-Content $log -Tail 18) -join "`n").Replace('%','%25').Replace("`r",'%0D').Replace("`n",'%0A')
             Write-Output "::notice title=Local fixture engine diagnostics::$log $tail"
