@@ -11,7 +11,7 @@ import urllib.request
 def dns(kind, *, tcp=False, timeout=12):
     query = struct.pack('!HHHHHH', 0x4381, 0x100, 1, 0, 0, 0)
     query += bytes.fromhex('076578616d706c6503636f6d00') + struct.pack('!HH', kind, 1)
-    start = time.monotonic()
+    start = time.perf_counter()
     with socket.socket(socket.AF_INET, socket.SOCK_STREAM if tcp else socket.SOCK_DGRAM) as sock:
         sock.settimeout(timeout)
         sock.connect(('198.18.0.2', 53))
@@ -32,7 +32,7 @@ def dns(kind, *, tcp=False, timeout=12):
     flags, _, answers = struct.unpack('!HHH', data[2:8])
     assert flags & 0x8000 and flags & 15 == 0
     assert answers > 0 if kind == 1 else answers == 0
-    return round((time.monotonic() - start) * 1000, 2)
+    return round((time.perf_counter() - start) * 1000, 2)
 
 
 def main():
@@ -49,15 +49,15 @@ def main():
     assert report['https_record_ms'] < 1500 and report['svcb_record_ms'] < 1500
     if '--dns-only' not in sys.argv:
         client = urllib.request.build_opener(urllib.request.ProxyHandler({}))
-        start = time.monotonic()
+        start = time.perf_counter()
         with client.open('http://198.18.0.10:23080/download', timeout=15) as response:body = response.read()
         assert body == bytes(range(256)) * 2048
-        report['download_512k_ms'] = round((time.monotonic() - start) * 1000, 2)
+        report['download_512k_ms'] = round((time.perf_counter() - start) * 1000, 2)
         upload = bytes(range(256)) * 256
-        start = time.monotonic()
+        start = time.perf_counter()
         with client.open(urllib.request.Request('http://198.18.0.10:23080/upload', data=upload), timeout=15) as response:
             assert response.read().decode() == hashlib.sha256(upload).hexdigest()
-        report['upload_64k_ms'] = round((time.monotonic() - start) * 1000, 2)
+        report['upload_64k_ms'] = round((time.perf_counter() - start) * 1000, 2)
     title = 'Forced primary DoH failure with verified secondary' if '--dns-only' in sys.argv else 'Windows TUN DNS and transfer fixture'
     print('::notice title=' + title + '::' + json.dumps(report), flush=True)
 

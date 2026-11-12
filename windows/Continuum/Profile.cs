@@ -130,7 +130,9 @@ public sealed record Profile(string Protocol, string Host, int Port, string Secr
             // HTTPS/SVCB queries: the DNS outbound's default sends an empty reply.
             ["dns"] = new JsonObject { ["servers"] = new JsonArray(
                 new JsonObject { ["address"] = "https://1.1.1.1/dns-query", ["timeoutMs"] = 4000 },
-                new JsonObject { ["address"] = "https://dns.google/dns-query", ["timeoutMs"] = 4000 }),
+                // IP-literal DoH keeps the secondary independent of a failed
+                // primary resolver. Google serves a valid certificate for 8.8.8.8.
+                new JsonObject { ["address"] = "https://8.8.8.8/dns-query", ["timeoutMs"] = 4000 }),
                 ["tag"] = "dns-query", ["queryStrategy"] = "UseIPv4", ["disableCache"] = false,
                 ["serveStale"] = false, ["enableParallelQuery"] = false },
             ["outbounds"] = new JsonArray(Outbound(), new JsonObject { ["tag"] = "dns", ["protocol"] = "dns", ["settings"] = new JsonObject() }),

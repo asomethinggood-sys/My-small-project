@@ -4,7 +4,7 @@ Native WPF desktop client for **normal Continuum**, separate from Nyx. It uses t
 
 ## Version 0.2: DNS and stability correction
 
-The 0.1 port explicitly dropped non-A/AAAA DNS questions. In particular, HTTPS/SVCB queries could time out rather than receive the immediate empty answer used by Android. This version removes that drop policy and adopts Android's two cached, certificate-verified DoH upstreams with four-second per-resolver budgets and an explicit proxy route. DNS does not fall back to your ISP.
+The 0.1 port explicitly dropped non-A/AAAA DNS questions. In particular, HTTPS/SVCB queries could time out rather than receive the immediate empty answer used by Android. This version removes that drop policy and adopts Android's two cached, certificate-verified DoH upstreams with four-second per-resolver budgets and an explicit proxy route. Both DoH addresses are IP literals (Cloudflare 1.1.1.1 and Google 8.8.8.8), so the fallback does not need the failed primary to resolve its own hostname. HTTPS certificate verification remains enabled. DNS does not fall back to your ISP.
 
 Health checks now try two destinations once per minute; an unreachable health site no longer kills a live tunnel. Label-only subscription changes and TUN-only address notifications do not cause reconnects. The app displays **tunnel DNS response time separately from HTTPS request duration**. HTTPS duration includes connection/TLS/server work and is not an ICMP ping; a 200 ms result is not guaranteed.
 
