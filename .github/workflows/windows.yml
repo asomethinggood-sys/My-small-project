@@ -25,8 +25,12 @@ jobs:
           dotnet-version: 8.0.x
       - name: Unit and policy tests
         run: |
-          dotnet run --project windows/Tests/Tests.csproj -c Release
-          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          dotnet run --project windows/Tests/Tests.csproj -c Release 2>&1 | Tee-Object -Variable testLog
+          if ($LASTEXITCODE -ne 0) {
+            $detail = (($testLog | Select-Object -Last 15) -join "`n").Replace('%','%25').Replace("`r",'%0D').Replace("`n",'%0A')
+            Write-Output "::error title=Windows test failure::$detail"
+            exit 1
+          }
       - name: Publish self-contained x64 and ARM64 packages
         run: |
           foreach ($arch in @('x64','arm64')) {

@@ -52,6 +52,14 @@ try {
     $app.CloseMainWindow() | Out-Null
     if (!$app.WaitForExit(10000)) { throw 'Desktop did not close cleanly' }
     Write-Output 'PASS Packaged WPF desktop launch and clean close'
+} catch {
+    $detail = ($_.ToString() + ' at ' + $_.ScriptStackTrace).Replace('%','%25').Replace("`r",'%0D').Replace("`n",'%0A')
+    Write-Output "::error title=Windows smoke failure::$detail"
+    if (Test-Path fixture/client.log) {
+        $tail = ((Get-Content fixture/client.log -Tail 12) -join "`n").Replace('%','%25').Replace("`r",'%0D').Replace("`n",'%0A')
+        Write-Output "::notice title=Local fixture engine diagnostics::$tail"
+    }
+    throw
 } finally {
     foreach ($p in @($app,$client,$server,$fixture)) { if ($null -ne $p -and !$p.HasExited) { Stop-Process -Id $p.Id -Force -ErrorAction SilentlyContinue } }
 }
