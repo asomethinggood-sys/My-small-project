@@ -12,6 +12,10 @@ class ContinuumServerTests(unittest.TestCase):
         self.assertEqual(inbound['streamSettings']['wsSettings']['path'], '/fixture')
         self.assertEqual(config['outbounds'][0]['settings']['targetStrategy'], 'UseIPv4')
         self.assertFalse(config['dns']['disableCache'])
+        self.assertTrue(config['dns']['enableParallelQuery'])
+        self.assertEqual(len(config['dns']['servers']), 2)
+        self.assertTrue(all(s['address'].startswith('https+local://') for s in config['dns']['servers']))
+        self.assertTrue(all(s['timeoutMs'] == 3000 for s in config['dns']['servers']))
         self.assertNotIn('finalRules', config['outbounds'][0]['settings'])
         self.assertEqual(config['outbounds'][0]['protocol'], 'freedom')
 

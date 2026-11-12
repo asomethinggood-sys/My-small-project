@@ -16,7 +16,13 @@ def configuration(identity, path, port=18888):
         'log': {'loglevel': 'warning'},
         # Cache remote hostname lookups and avoid unusable runner IPv6 paths.
         # This is server-side DNS, not client-side DNS bypass.
-        'dns': {'servers': ['localhost'], 'queryStrategy': 'UseIPv4',
+        # Xray's `localhost` resolver bypasses its cache. Use independent
+        # IP-literal DoH transports here instead. +local is server-only: it
+        # resolves directly at the exit, never recursively through freedom.
+        'dns': {'servers': [
+                    {'address': 'https+local://1.1.1.1/dns-query', 'timeoutMs': 3000},
+                    {'address': 'https+local://8.8.8.8/dns-query', 'timeoutMs': 3000}],
+                'queryStrategy': 'UseIPv4', 'enableParallelQuery': True,
                 'disableCache': False, 'serveStale': False},
         'inbounds': [{'listen': '127.0.0.1', 'port': port, 'protocol': 'vless',
                       'settings': {'clients': [{'id': identity}], 'decryption': 'none'},
