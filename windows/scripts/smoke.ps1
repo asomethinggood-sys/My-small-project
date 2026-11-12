@@ -18,8 +18,12 @@ try {
     Start-Sleep 2
     New-Item -ItemType Directory -Force windows/Tests/bin/Release/net8.0-windows/engine | Out-Null
     Copy-Item "$AppDirectory/engine/*" windows/Tests/bin/Release/net8.0-windows/engine -Force
-    dotnet run --project windows/Tests/Tests.csproj -c Release --no-build -- --engine-lifecycle
-    if ($LASTEXITCODE -ne 0) { throw 'App engine lifecycle test failed' }
+    dotnet run --project windows/Tests/Tests.csproj -c Release --no-build -- --engine-lifecycle 2>&1 | Tee-Object -Variable lifecycleLog
+    if ($LASTEXITCODE -ne 0) {
+        $detail = (($lifecycleLog | Select-Object -Last 18) -join "`n").Replace('%','%25').Replace("`r",'%0D').Replace("`n",'%0A')
+        Write-Output "::error title=Local engine lifecycle diagnostics::$detail"
+        throw 'App engine lifecycle test failed'
+    }
     $client = Start-Process $core -ArgumentList 'run -config fixture/scoped-tun.json' -PassThru -WindowStyle Hidden -RedirectStandardError fixture/client.log
     $ready = $false
     for ($i = 0; $i -lt 30; $i++) {
