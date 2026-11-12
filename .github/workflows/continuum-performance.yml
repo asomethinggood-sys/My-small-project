@@ -1,0 +1,24 @@
+name: Bounded Continuum server performance check
+on:
+  push:
+    branches: [arena/f056ce38-my-small-project]
+    paths: [scripts/continuum_server.py, scripts/continuum_transport_check.py, scripts/tune-tunnel-runtime.sh, .github/workflows/continuum-performance.yml, .github/workflows/vpn.yml]
+permissions:
+  contents: read
+jobs:
+  verify:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 8
+    steps:
+      - uses: actions/checkout@v4
+      - name: Test configuration boundaries and shell syntax
+        run: |
+          python3 -m unittest discover -s tests -p 'test_continuum_server.py' -v
+          bash -n scripts/tune-tunnel-runtime.sh
+      - name: Install pinned binaries and apply ephemeral tuning
+        run: |
+          bash scripts/download-binaries.sh .runtime/bin --xray-only
+          bash scripts/download-cloudflared.sh .runtime/bin
+          sudo bash scripts/tune-tunnel-runtime.sh
+      - name: Verify normal and early-data paths on one private connector
+        run: timeout --signal=TERM --kill-after=10s 300s python3 -m scripts.continuum_transport_check

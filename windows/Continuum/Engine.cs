@@ -55,14 +55,44 @@ public sealed class Engine : IDisposable
         }
         catch { Stop(); throw; }
     }
-    public async Task<long> HealthAsync(CancellationToken ct, string url = "https://www.gstatic.com/generate_204")
+    public async Task<long> HealthAsync(CancellationToken ct, string? url = null)
     {
         if (!Running) throw new InvalidOperationException("Engine stopped.");
         using var handler = new HttpClientHandler { Proxy = new WebProxy($"http://127.0.0.1:{Port}"), UseProxy = true, AllowAutoRedirect = false };
-        using var client = new HttpClient(handler) { Timeout = TimeSpan.FromSeconds(12) };
+        using var client = new HttpClient(handler) { Timeout = Timeout.InfiniteTimeSpan };
+        var urls = url == null ? new[] { "https://www.gstatic.com/generate_204", "https://www.cloudflare.com/cdn-cgi/trace" } : new[] { url };
+        foreach (var target in urls)
+        {
+            using var budget = CancellationTokenSource.CreateLinkedTokenSource(ct);
+            budget.CancelAfter(TimeSpan.FromSeconds(8));
+            var timer = Stopwatch.StartNew();
+            try
+            {
+                using var response = await client.GetAsync(target, HttpCompletionOption.ResponseHeadersRead, budget.Token);
+                response.EnsureSuccessStatusCode(); return timer.ElapsedMilliseconds;
+            }
+            catch (HttpRequestException) { ct.ThrowIfCancellationRequested(); }
+            catch (OperationCanceledException) when (!ct.IsCancellationRequested) { }
+        }
+        ct.ThrowIfCancellationRequested();
+        throw new InvalidOperationException("Neither HTTPS health destination responded.");
+    }
+    public async Task<long> DnsAsync(CancellationToken ct)
+    {
+        if (!Running) throw new InvalidOperationException("Engine stopped.");
+        using var budget = CancellationTokenSource.CreateLinkedTokenSource(ct);
+        budget.CancelAfter(TimeSpan.FromSeconds(10));
+        using var socket = new UdpClient(AddressFamily.InterNetwork);
+        socket.Connect("198.18.0.2", 53);
+        byte[] query = Convert.FromHexString("438101000001000000000000076578616D706C6503636F6D0000010001");
         var timer = Stopwatch.StartNew();
-        using var response = await client.GetAsync(url, HttpCompletionOption.ResponseHeadersRead, ct);
-        response.EnsureSuccessStatusCode(); return timer.ElapsedMilliseconds;
+        await socket.SendAsync(query.AsMemory(), budget.Token);
+        var response = await socket.ReceiveAsync(budget.Token);
+        var data = response.Buffer;
+        if (data.Length < 12 || data[0] != query[0] || data[1] != query[1] ||
+            (data[2] & 0x80) == 0 || (data[3] & 15) != 0 || (data[6] == 0 && data[7] == 0))
+            throw new InvalidOperationException("Tunnel DNS returned no usable answer.");
+        return timer.ElapsedMilliseconds;
     }
     public void Stop()
     {

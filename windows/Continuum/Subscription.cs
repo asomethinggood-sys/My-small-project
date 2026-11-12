@@ -15,7 +15,7 @@ public sealed class Subscription : IDisposable
     public Subscription(HttpMessageHandler? handler = null)
     {
         client = new HttpClient(handler ?? new HttpClientHandler { AllowAutoRedirect = false, UseProxy = false }) { Timeout = TimeSpan.FromSeconds(20) };
-        client.DefaultRequestHeaders.UserAgent.ParseAdd("Continuum-Windows/0.1");
+        client.DefaultRequestHeaders.UserAgent.ParseAdd("Continuum-Windows/0.2");
     }
     public async Task<string> FetchAsync(string source, CancellationToken ct)
     {

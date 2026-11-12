@@ -126,10 +126,17 @@ public sealed record Profile(string Protocol, string Host, int Port, string Secr
         }, ["sniffing"] = new JsonObject { ["enabled"] = true, ["destOverride"] = new JsonArray("http", "tls"), ["routeOnly"] = false } });
         return new JsonObject {
             ["log"] = new JsonObject { ["loglevel"] = "none" }, ["inbounds"] = inputs,
-            ["dns"] = new JsonObject { ["servers"] = new JsonArray("https://1.1.1.1/dns-query"), ["queryStrategy"] = "UseIPv4" },
-            ["outbounds"] = new JsonArray(Outbound(), new JsonObject { ["tag"] = "dns", ["protocol"] = "dns", ["settings"] = new JsonObject { ["nonIPQuery"] = "drop" } }),
-            ["routing"] = new JsonObject { ["domainStrategy"] = "AsIs", ["rules"] = new JsonArray(new JsonObject {
-                ["type"] = "field", ["inboundTag"] = new JsonArray("tun"), ["port"] = "53", ["outboundTag"] = "dns" }) }
+            // Match the working Android resolver policy. Never silently drop
+            // HTTPS/SVCB queries: the DNS outbound's default sends an empty reply.
+            ["dns"] = new JsonObject { ["servers"] = new JsonArray(
+                new JsonObject { ["address"] = "https://1.1.1.1/dns-query", ["timeoutMs"] = 4000 },
+                new JsonObject { ["address"] = "https://dns.google/dns-query", ["timeoutMs"] = 4000 }),
+                ["tag"] = "dns-query", ["queryStrategy"] = "UseIPv4", ["disableCache"] = false,
+                ["serveStale"] = false, ["enableParallelQuery"] = false },
+            ["outbounds"] = new JsonArray(Outbound(), new JsonObject { ["tag"] = "dns", ["protocol"] = "dns", ["settings"] = new JsonObject() }),
+            ["routing"] = new JsonObject { ["domainStrategy"] = "AsIs", ["rules"] = new JsonArray(
+                new JsonObject { ["type"] = "field", ["inboundTag"] = new JsonArray("tun"), ["port"] = "53", ["network"] = "tcp,udp", ["outboundTag"] = "dns" },
+                new JsonObject { ["type"] = "field", ["inboundTag"] = new JsonArray("dns-query"), ["outboundTag"] = "proxy" }) }
         };
     }
 }

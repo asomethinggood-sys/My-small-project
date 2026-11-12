@@ -2,6 +2,14 @@
 
 Native WPF desktop client for **normal Continuum**, separate from Nyx. It uses the existing authoritative subscription unchanged. No country pools, new server workflow, Worker account or domain setup.
 
+## Version 0.2: DNS and stability correction
+
+The 0.1 port explicitly dropped non-A/AAAA DNS questions. In particular, HTTPS/SVCB queries could time out rather than receive the immediate empty answer used by Android. This version removes that drop policy and adopts Android's two cached, certificate-verified DoH upstreams with four-second per-resolver budgets and an explicit proxy route. DNS does not fall back to your ISP.
+
+Health checks now try two destinations once per minute; an unreachable health site no longer kills a live tunnel. Label-only subscription changes and TUN-only address notifications do not cause reconnects. The app displays **tunnel DNS response time separately from HTTPS request duration**. HTTPS duration includes connection/TLS/server work and is not an ICMP ping; a 200 ms result is not guaranteed.
+
+Server-side settings in the working branch add cached IPv4-first origin DNS, optional available BBR/FQ and QUIC buffer headroom, PMTU recovery, and readiness-gated WS early data. These do not relocate the runner. They do not change an already-running default-branch server merely because you install this app.
+
 ## Install and use
 
 1. Download the Windows **x64** ZIP (Intel/AMD) or **ARM64** ZIP (Windows on ARM).
@@ -27,7 +35,7 @@ Windows 10 1809+ and Windows 11 are the target OS versions. .NET 8 is bundled; n
 
 This is **not an always-on kill switch**. Dynamic guards end when the engine exits; normal Internet routing can resume during disconnect, crash recovery or a profile replacement. A profile rotation interrupts existing TCP sessions. More-specific LAN routes may remain outside the tunnel. Custom application DNS protocols and captive portals require separate validation. Do not stack this with another VPN or Mobile Hotspot without testing.
 
-A failed health URL does not prove all Internet traffic is broken; the app retains a running engine until three failures. An unavailable subscription does not destroy an otherwise healthy cached connection. The built-in subscription points to the existing service and does not guarantee that the backend is currently up. No 24/7 hosting, low-ping guarantee or measured Tehran latency improvement is provided by this client port.
+A failed health URL does not prove all Internet traffic is broken; the app retains a running engine even after repeated failed checks, rather than interrupting existing sessions. An unavailable subscription does not destroy an otherwise healthy cached connection. The built-in subscription points to the existing service and does not guarantee that the backend is currently up. No 24/7 hosting, low-ping guarantee or measured Tehran latency improvement is provided by this client port.
 
 If a forced process termination leaves networking impaired, exit Continuum and reconnect your physical network adapter or reboot. Do not delete unrelated adapters or reset all firewall rules. Xray normally removes its owned routes and dynamic filters; physical-interface changes cannot be guaranteed restored after every forced termination.
 

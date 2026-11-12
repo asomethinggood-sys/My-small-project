@@ -47,7 +47,7 @@ jobs:
         run: |
           New-Item -ItemType Directory -Force release | Out-Null
           foreach ($arch in @('x64','arm64')) {
-            Compress-Archive -Path "package-$arch/*" -DestinationPath "release/Continuum-0.1.0-windows-$arch.zip"
+            Compress-Archive -Path "package-$arch/*" -DestinationPath "release/Continuum-0.2.0-windows-$arch.zip"
           }
           Get-ChildItem release/*.zip | ForEach-Object { "$((Get-FileHash $_ -Algorithm SHA256).Hash.ToLowerInvariant())  $($_.Name)" } | Set-Content release/SHA256SUMS.txt
           Get-ChildItem release/*.zip | ForEach-Object { Write-Output "::notice title=Package size::$($_.Name): $($_.Length) bytes" }
@@ -66,6 +66,6 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          $tag = "continuum-windows-0.1.0-${{ github.run_number }}"
-          gh release create $tag release/* --target '${{ github.sha }}' --prerelease --title 'Continuum 0.1 for Windows — x64 and ARM64' --notes 'Normal Continuum desktop client. Extract the entire ZIP and run Continuum.exe as administrator. X64 has Windows Server runner unit, local TUN TCP/UDP and desktop smoke evidence; physical Windows 10/11 and ARM64 acceptance remain unverified. Unsigned app; signature-checked Wintun. Not an always-on kill switch. See bundled README for scope and limitations.'
+          $tag = "continuum-windows-0.2.0-${{ github.run_number }}"
+          gh release create $tag release/* --target '${{ github.sha }}' --prerelease --title 'Continuum 0.2 for Windows — DNS and connection stability fixes' --notes 'Fixes dropped HTTPS/SVCB DNS queries; adds Android-equivalent cached DoH with bounded fallback, separate tunnel DNS timing, and avoids restarting live sessions on failed health sites or label-only updates. Extract the entire ZIP and run Continuum.exe as administrator. Windows Server CI includes real scoped TUN TCP/UDP, DNS regression/fallback, verified transfers and desktop checks. Physical Windows 10/11 and ARM64 acceptance remain unverified. No 200 ms guarantee; displayed HTTPS duration is not ping. Unsigned app; not an always-on kill switch.'
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }

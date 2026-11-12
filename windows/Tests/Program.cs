@@ -35,12 +35,26 @@ Test("TUN includes IPv4 IPv6 routing, WFP DNS guards and explicit outbound inter
     Assert(s["autoSystemRoutingTable"]!.AsArray().Count == 4 && s["autoOutboundsInterface"]!.ToString() == "auto");
     Assert(s["autoSystemWfpBlockLeak"]!.AsArray().Count == 2);
     Assert(c["outbounds"]![0]!["streamSettings"]!["tlsSettings"]!["allowInsecure"]!.GetValue<bool>() == false);
-    Assert(c["dns"]!["servers"]![0]!.ToString().StartsWith("https://"));
+    Assert(c["dns"]!["servers"]![0]!["address"]!.ToString().StartsWith("https://"));
 });
 Test("No direct outbound or external listener", () => {
     var c = Profile.Parse(vless).Config(false, 23456);
     Assert(c["inbounds"]!.AsArray().Count == 1 && c["inbounds"]![0]!["listen"]!.ToString() == "127.0.0.1");
     Assert(c["outbounds"]!.AsArray().All(o => o!["protocol"]!.ToString() != "freedom"));
+});
+Test("Android-equivalent bounded DoH fallback and non-IP DNS responses", () => {
+    var c = Profile.Parse(vless).Config(true, 23456);
+    Assert(c["dns"]!["servers"]!.AsArray().Count == 2);
+    Assert(c["dns"]!["servers"]!.AsArray().All(s => s!["timeoutMs"]!.GetValue<int>() == 4000));
+    Assert(c["dns"]!["disableCache"]!.GetValue<bool>() == false);
+    Assert(c["outbounds"]![1]!["settings"]!.AsObject().Count == 0);
+    Assert(c["routing"]!["rules"]![1]!["inboundTag"]![0]!.ToString() == "dns-query");
+});
+Test("Health failures and label-only updates do not recycle running tunnels", () => {
+    for (int i = 0; i < 10; i++) Assert(!ConnectionPolicy.NeedsRestart(true, vless, vless.Replace("#Sample", "#NewName")));
+    Assert(ConnectionPolicy.NeedsRestart(false, vless, vless));
+    Assert(ConnectionPolicy.NeedsRestart(true, vless, vless.Replace("example.com", "other.example.com")));
+    Assert(ConnectionPolicy.NeedsRestart(true, null, vless));
 });
 var calls = new List<HttpRequestMessage>();
 var handler = new Stub(async (request, token) => {
@@ -71,6 +85,12 @@ if (args.Contains("--write-fixture")) {
     tunSettings["autoSystemRoutingTable"] = new JsonArray("198.18.0.0/15");
     tunSettings["autoSystemWfpBlockLeak"] = new JsonArray(); // Scope fixture traffic, never hijack CI control traffic.
     File.WriteAllText("fixture/scoped-tun.json", tun.ToJsonString());
+    var legacy = tun.DeepClone();
+    legacy["outbounds"]![1]!["settings"] = new JsonObject { ["nonIPQuery"] = "drop" };
+    File.WriteAllText("fixture/legacy-dns-tun.json", legacy.ToJsonString());
+    var fallback = tun.DeepClone();
+    fallback["dns"]!["servers"]![0]!["address"] = "https://192.0.2.1/dns-query"; // Deliberately unreachable TEST-NET resolver.
+    File.WriteAllText("fixture/fallback-tun.json", fallback.ToJsonString());
 }
 if (args.Contains("--engine-lifecycle")) {
     var p = Profile.Parse("ss://" + Convert.ToBase64String(Encoding.UTF8.GetBytes("aes-128-gcm:continuum-ci-only-password")) + "@127.0.0.1:23081#LocalFixture");

@@ -62,6 +62,9 @@ jobs:
           "$HOME/bin/xray" version
           "$HOME/bin/cloudflared" --version
 
+      - name: Tune ephemeral connector buffers and TCP path recovery
+        run: sudo bash scripts/tune-tunnel-runtime.sh
+
       # ---------------------------------------------------------------
       # 3. Start Xray (VLESS + WebSocket) and expose it via a Cloudflare
       #    quick tunnel. No ports opened on the runner - cloudflared dials
@@ -71,7 +74,7 @@ jobs:
         env:
           RELAY_ENABLED: ${{ vars.RELAY_ENABLED || 'false' }}
           CF_TRANSPORT: ${{ vars.CF_TRANSPORT || 'auto' }}
-          WS_EARLY_DATA: ${{ vars.WS_EARLY_DATA || 'false' }}
+          WS_EARLY_DATA: ${{ vars.WS_EARLY_DATA || 'true' }}
         run: |
           set -euo pipefail
 
@@ -90,25 +93,10 @@ jobs:
           esac
           PORT=18888
 
-          cat > "$HOME/vpn/config.json" <<JSON
-          {
-            "log": {"loglevel": "warning"},
-            "inbounds": [{
-              "listen": "127.0.0.1",
-              "port": ${PORT},
-              "protocol": "vless",
-              "settings": {
-                "clients": [{"id": "${UUID}"}],
-                "decryption": "none"
-              },
-              "streamSettings": {
-                "network": "ws",
-                "wsSettings": {"path": "${WS_PATH}"}
-              }
-            }],
-            "outbounds": [{"protocol": "freedom"}]
-          }
-          JSON
+          # Same wire protocol and identities as Android; no extra relay.
+          # IPv4-first cached origin DNS avoids repeated unusable IPv6 dials.
+          python3 scripts/continuum_server.py --uuid "$UUID" --path "$WS_PATH" \
+            --port "$PORT" --output "$HOME/vpn/config.json"
 
           "$HOME/bin/xray" run -test -c "$HOME/vpn/config.json"
           echo "Xray config OK."
@@ -153,7 +141,7 @@ jobs:
         if: vars.RELAY_ENABLED == 'true' && github.ref_name == github.event.repository.default_branch
         env:
           RELAY_UPDATE_TOKEN: ${{ secrets.RELAY_UPDATE_TOKEN }}
-          WS_EARLY_DATA: ${{ vars.WS_EARLY_DATA || 'false' }}
+          WS_EARLY_DATA: ${{ vars.WS_EARLY_DATA || 'true' }}
         run: |
           set -euo pipefail
           . "$HOME/vpn/env"
@@ -175,7 +163,7 @@ jobs:
           GH_REPO: ${{ github.repository }}
           RELAY_ENABLED: ${{ vars.RELAY_ENABLED || 'false' }}
           CF_TRANSPORT: ${{ vars.CF_TRANSPORT || 'auto' }}
-          WS_EARLY_DATA: ${{ vars.WS_EARLY_DATA || 'false' }}
+          WS_EARLY_DATA: ${{ vars.WS_EARLY_DATA || 'true' }}
         run: |
           set -euo pipefail
           . "$HOME/vpn/env"

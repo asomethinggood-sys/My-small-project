@@ -11,7 +11,11 @@ try {
         log = @{loglevel='debug'; error='fixture/server-detail.log'}
         inbounds = @(@{listen='127.0.0.1';port=23081;protocol='shadowsocks';settings=@{method='aes-128-gcm';password='continuum-ci-only-password';network='tcp,udp'}})
         # Local fixture only: permit exactly the owned echo service, not general private-network access.
-        outbounds = @(@{protocol='freedom';settings=@{redirect='127.0.0.1:23080';finalRules=@(@{action='allow';network='tcp,udp';ip=@('127.0.0.1/32');port='23080'})}})
+        outbounds = @(
+            @{tag='internet';protocol='freedom';settings=@{targetStrategy='UseIPv4'}},
+            @{tag='fixture';protocol='freedom';settings=@{redirect='127.0.0.1:23080';finalRules=@(@{action='allow';network='tcp,udp';ip=@('127.0.0.1/32');port='23080'})}}
+        )
+        routing = @{rules=@(@{type='field';ip=@('198.18.0.10/32');port='23080';outboundTag='fixture'})}
     }
     $config | ConvertTo-Json -Depth 15 | Set-Content fixture/server.json
     $fixture = Start-Process python -ArgumentList 'windows/scripts/fixture.py' -PassThru -WindowStyle Hidden
@@ -28,6 +32,13 @@ try {
         Write-Output "::error title=Local engine lifecycle diagnostics::$detail"
         throw 'App engine lifecycle test failed'
     }
+    $client = Start-Process $core -ArgumentList 'run -config fixture/legacy-dns-tun.json' -PassThru -WindowStyle Hidden -RedirectStandardError fixture/legacy.log
+    Start-Sleep 3
+    if ($client.HasExited -or !(Get-NetRoute -DestinationPrefix '198.18.0.0/15' -ErrorAction SilentlyContinue)) { throw 'Legacy DNS comparison tunnel not ready' }
+    python windows/scripts/network-check.py --baseline-drop
+    if ($LASTEXITCODE -ne 0) { throw 'Legacy DNS reproduction failed' }
+    Stop-Process -Id $client.Id -Force; $client.WaitForExit(); $client = $null
+    Start-Sleep 2
     $client = Start-Process $core -ArgumentList 'run -config fixture/scoped-tun.json' -PassThru -WindowStyle Hidden -RedirectStandardError fixture/client.log
     $ready = $false
     for ($i = 0; $i -lt 30; $i++) {
@@ -40,10 +51,22 @@ try {
     python -c "import socket; s=socket.socket(socket.AF_INET,socket.SOCK_DGRAM);s.settimeout(8);data=b'continuum-udp-fixture'*60;s.sendto(data,('198.18.0.10',23080));result,peer=s.recvfrom(4096);assert result==data"
     if ($LASTEXITCODE -ne 0) { throw 'Scoped TUN UDP echo failed' }
     Write-Output 'PASS Actual Windows TUN HTTP marker and UDP echo through local Shadowsocks peer'
+    python windows/scripts/network-check.py
+    if ($LASTEXITCODE -ne 0) { throw 'TUN DNS and byte-verified transfers failed' }
+    & curl.exe --silent --fail --noproxy '' --proxy http://127.0.0.1:23082 --max-time 15 --output NUL https://example.com/
+    if ($LASTEXITCODE -ne 0) { throw 'Certificate-verified public HTTPS through test peer failed' }
     Stop-Process -Id $client.Id -Force; $client.WaitForExit(); $client = $null
     Start-Sleep 2
     if (Get-NetRoute -DestinationPrefix '198.18.0.0/15' -ErrorAction SilentlyContinue) { throw 'Fixture tunnel route remained after engine exit' }
     Write-Output 'PASS Scoped tunnel route removed on process exit'
+    $client = Start-Process $core -ArgumentList 'run -config fixture/fallback-tun.json' -PassThru -WindowStyle Hidden -RedirectStandardError fixture/fallback.log
+    Start-Sleep 3
+    if ($client.HasExited) { throw 'Fallback resolver test engine exited' }
+    python windows/scripts/network-check.py --dns-only
+    if ($LASTEXITCODE -ne 0) { throw 'Secondary DoH did not recover from unreachable primary' }
+    Stop-Process -Id $client.Id -Force; $client.WaitForExit(); $client = $null
+    Start-Sleep 2
+    if (Get-NetRoute -DestinationPrefix '198.18.0.0/15' -ErrorAction SilentlyContinue) { throw 'Fallback test left a route behind' }
     $exe = (Resolve-Path "$AppDirectory/Continuum.exe").Path
     $app = Start-Process $exe -PassThru
     if (!$app.WaitForInputIdle(20000)) { throw 'Desktop window did not become idle' }

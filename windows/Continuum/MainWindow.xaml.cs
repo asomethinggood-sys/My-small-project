@@ -15,7 +15,7 @@ public partial class MainWindow : Window
     readonly Engine engine = new();
     readonly Subscription subscription = new();
     readonly SemaphoreSlim operation = new(1, 1);
-    readonly DispatcherTimer timer = new() { Interval = TimeSpan.FromSeconds(20) };
+    readonly DispatcherTimer timer = new() { Interval = TimeSpan.FromSeconds(60) };
     readonly Forms.NotifyIcon tray;
     CancellationTokenSource work = new();
     Settings settings;
@@ -23,6 +23,7 @@ public partial class MainWindow : Window
     string? active;
     DateTime nextFetch = DateTime.MinValue, retryAt = DateTime.MinValue;
     int failures;
+    string upstreamKey = ConnectionPolicy.UpstreamKey();
     public MainWindow()
     {
         InitializeComponent();
@@ -40,7 +41,11 @@ public partial class MainWindow : Window
         System.Windows.Application.Current.SessionEnding += (_, _) => { wanted = false; work.Cancel(); engine.Stop(); };
     }
     void ShowWindow() { Show(); WindowState = WindowState.Normal; Activate(); }
-    void NetworkChanged(object? sender, EventArgs e) => Dispatcher.BeginInvoke(new Action(() => { nextFetch = DateTime.MinValue; retryAt = DateTime.MinValue; }));
+    void NetworkChanged(object? sender, EventArgs e) => Dispatcher.BeginInvoke(new Action(() => {
+        var next = ConnectionPolicy.UpstreamKey();
+        if (next == upstreamKey) return;
+        upstreamKey = next; nextFetch = DateTime.MinValue; retryAt = DateTime.MinValue;
+    }));
     void Editable(bool enabled) { SourceText.IsEnabled = enabled; SourceMode.IsEnabled = enabled; Mtu.IsEnabled = enabled; }
     void State(string title, string detail, bool connected = false)
     {
@@ -76,19 +81,25 @@ public partial class MainWindow : Window
                 catch when (active != null && engine.Running && !ct.IsCancellationRequested)
                 { next = active; nextFetch = DateTime.UtcNow.AddMinutes(1); }
                 ct.ThrowIfCancellationRequested();
-                if (next != active || !engine.Running)
-                {
+                if (ConnectionPolicy.NeedsRestart(engine.Running, active, next))
                     await engine.StartAsync(Profile.Parse(next), true, settings.Mtu, ct);
-                    active = next;
-                }
+                active = next;
             }
             else if (!engine.Running && active != null)
                 await engine.StartAsync(Profile.Parse(active), true, settings.Mtu, ct);
             var elapsed = await engine.HealthAsync(ct);
+            Latency.Text = $"HTTPS REQUEST  {elapsed:N0} ms · not ping";
+            try { DnsLatency.Text = $"TUNNEL DNS  {await engine.DnsAsync(ct):N0} ms"; }
+            catch when (!ct.IsCancellationRequested)
+            {
+                DnsLatency.Text = "TUNNEL DNS  unavailable";
+                State("DNS check failed", "The proxy responded, but the Windows tunnel DNS did not. The tunnel is kept running. Try Check now or MTU 1280 after disconnecting.");
+                return;
+            }
             ct.ThrowIfCancellationRequested();
             if (!wanted) return;
             failures = 0; retryAt = DateTime.MinValue;
-            Latency.Text = $"HTTPS CHECK  {elapsed:N0} ms";
+            Latency.Text = $"HTTPS REQUEST  {elapsed:N0} ms · not ping";
             State("Connected", $"{Profile.Parse(active!).Protocol.ToUpperInvariant()} · device-wide tunnel\nYour connection is responding.", true);
         }
         catch (OperationCanceledException) when (ct.IsCancellationRequested) { }
@@ -96,11 +107,13 @@ public partial class MainWindow : Window
         {
             if (!wanted) return;
             failures++;
-            // Keep a running tunnel after a failed health endpoint. Only recycle
-            // after three failures; a single check is not proof the route died.
-            if (failures >= 3) engine.Stop();
+            // Keep existing sessions alive even if health sites are blocked.
+            // A dead engine is restarted on the next attempt; a live one is not
+            // killed merely because two external probes timed out.
             retryAt = DateTime.UtcNow.AddSeconds(Math.Min(300, 10 * Math.Pow(2, Math.Min(failures, 5))));
-            State("Connection unavailable", "The route did not pass its HTTPS check. Retrying with bounded backoff; Disconnect stops retries. Check your source, network and other VPNs.");
+            State(engine.Running ? "Check inconclusive" : "Connection unavailable",
+                engine.Running ? "Health sites did not respond. The tunnel is still running; existing traffic was not interrupted. Check now retries the test." :
+                "The engine stopped or the source is unavailable. Retrying with bounded backoff; Disconnect stops retries.");
             Latency.Text = "HTTPS CHECK  unavailable";
         }
         finally { operation.Release(); }
@@ -109,7 +122,7 @@ public partial class MainWindow : Window
     {
         wanted = false; work.Cancel(); ConnectButton.IsEnabled = false;
         await operation.WaitAsync();
-        try { engine.Stop(); active = null; State("Disconnected", "The tunnel is closed. Automatic reconnect is paused."); Latency.Text = "HTTPS CHECK  —"; }
+        try { engine.Stop(); active = null; State("Disconnected", "The tunnel is closed. Automatic reconnect is paused."); Latency.Text = "HTTPS CHECK  —"; DnsLatency.Text = "TUNNEL DNS  —"; }
         finally { operation.Release(); Editable(true); ConnectButton.IsEnabled = true; ConnectButton.Content = "Connect"; CheckButton.IsEnabled = false; }
     }
     async void CheckNow(object sender, RoutedEventArgs e) { retryAt = DateTime.MinValue; await Maintain(true); }
