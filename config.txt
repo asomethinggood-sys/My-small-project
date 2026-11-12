@@ -1,1 +1,1 @@
-vless://9ccc5436-3ac2-4ee4-ab32-3d145c6278cc@mill-italic-economies-district.trycloudflare.com:443?encryption=none&security=tls&sni=mill-italic-economies-district.trycloudflare.com&type=ws&host=mill-italic-economies-district.trycloudflare.com&path=%2F311cc6fd720941fd8d6104db8e50cdf3#ArenaVPN
+vless://a4d3c870-a351-4cec-b508-698a9795f05d@thereof-fee-examples-national.trycloudflare.com:443?encryption=none&security=tls&sni=thereof-fee-examples-national.trycloudflare.com&type=ws&host=thereof-fee-examples-national.trycloudflare.com&path=%2Fe3bd6ee5ed1d45ff9f167f1b0e87c038#ArenaVPN
