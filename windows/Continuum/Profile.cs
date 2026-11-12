@@ -126,15 +126,16 @@ public sealed record Profile(string Protocol, string Host, int Port, string Secr
         }, ["sniffing"] = new JsonObject { ["enabled"] = true, ["destOverride"] = new JsonArray("http", "tls"), ["routeOnly"] = false } });
         return new JsonObject {
             ["log"] = new JsonObject { ["loglevel"] = "none" }, ["inbounds"] = inputs,
-            // Match the working Android resolver policy. Never silently drop
-            // HTTPS/SVCB queries: the DNS outbound's default sends an empty reply.
+            // Match Android's answer/cache behavior. Race equivalent DoH
+            // upstreams so one timed-out resolver cannot delay every cache hit.
+            // HTTPS/SVCB queries receive the DNS outbound's default empty reply.
             ["dns"] = new JsonObject { ["servers"] = new JsonArray(
                 new JsonObject { ["address"] = "https://1.1.1.1/dns-query", ["timeoutMs"] = 4000 },
                 // IP-literal DoH keeps the secondary independent of a failed
                 // primary resolver. Google serves a valid certificate for 8.8.8.8.
                 new JsonObject { ["address"] = "https://8.8.8.8/dns-query", ["timeoutMs"] = 4000 }),
                 ["tag"] = "dns-query", ["queryStrategy"] = "UseIPv4", ["disableCache"] = false,
-                ["serveStale"] = false, ["enableParallelQuery"] = false },
+                ["serveStale"] = false, ["enableParallelQuery"] = true },
             ["outbounds"] = new JsonArray(Outbound(), new JsonObject { ["tag"] = "dns", ["protocol"] = "dns", ["settings"] = new JsonObject() }),
             ["routing"] = new JsonObject { ["domainStrategy"] = "AsIs", ["rules"] = new JsonArray(
                 new JsonObject { ["type"] = "field", ["inboundTag"] = new JsonArray("tun"), ["port"] = "53", ["network"] = "tcp,udp", ["outboundTag"] = "dns" },

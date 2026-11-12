@@ -48,6 +48,7 @@ Test("Android-equivalent bounded DoH fallback and non-IP DNS responses", () => {
     Assert(c["dns"]!["servers"]!.AsArray().All(s => s!["timeoutMs"]!.GetValue<int>() == 4000));
     Assert(c["dns"]!["servers"]!.AsArray().All(s => IPAddress.TryParse(new Uri(s!["address"]!.ToString()).Host, out _)));
     Assert(c["dns"]!["disableCache"]!.GetValue<bool>() == false);
+    Assert(c["dns"]!["enableParallelQuery"]!.GetValue<bool>());
     Assert(c["outbounds"]![1]!["settings"]!.AsObject().Count == 0);
     Assert(c["routing"]!["rules"]![1]!["inboundTag"]![0]!.ToString() == "dns-query");
 });

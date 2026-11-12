@@ -47,6 +47,11 @@ def main():
         report[name] = dns(kind)
     report['tcp_dns_ms'] = dns(1, tcp=True)
     assert report['https_record_ms'] < 1500 and report['svcb_record_ms'] < 1500
+    if '--dns-only' in sys.argv:
+        # The unreachable primary has a four-second budget. It must not delay
+        # either the healthy answer or a subsequent secondary-cache hit.
+        assert report['a_cold_ms'] < 2500, 'Healthy resolver waited behind failed primary'
+        assert report['a_cached_ms'] < 1000, 'Cached answer waited behind failed primary'
     if '--dns-only' not in sys.argv:
         client = urllib.request.build_opener(urllib.request.ProxyHandler({}))
         start = time.perf_counter()
