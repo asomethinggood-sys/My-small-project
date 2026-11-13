@@ -3,7 +3,6 @@ on:
   push:
     branches: [arena/f056ce38-my-small-project]
     paths: [windows/**, .github/workflows/windows.yml]
-  workflow_dispatch:
 permissions:
   contents: read
 concurrency:
@@ -12,7 +11,7 @@ concurrency:
 jobs:
   desktop:
     runs-on: windows-2022
-    timeout-minutes: 25
+    timeout-minutes: 45
     permissions:
       contents: write
     defaults:
@@ -20,41 +19,67 @@ jobs:
         shell: pwsh
     steps:
       - uses: actions/checkout@v4
-      - uses: actions/setup-dotnet@v4
+      - uses: actions/checkout@v4
         with:
-          dotnet-version: 8.0.x
-      - name: Unit and policy tests
+          repository: XTLS/Xray-core
+          ref: a4a3dff5b20c2faae567b742c172c7b95e75c083
+          path: engine-source
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: engine-source/go.mod
+          cache-dependency-path: engine-source/go.sum
+      - name: Build Rust x64 client and tests
         run: |
-          dotnet run --project windows/Tests/Tests.csproj -c Release 2>&1 | Tee-Object -Variable testLog
-          if ($LASTEXITCODE -ne 0) {
-            $detail = (($testLog | Select-Object -Last 15) -join "`n").Replace('%','%25').Replace("`r",'%0D').Replace("`n",'%0A')
-            Write-Output "::error title=Windows test failure::$detail"
-            exit 1
+          rustup default stable-x86_64-pc-windows-msvc
+          cargo test --manifest-path windows/native/Cargo.toml 2>&1 | Tee-Object -FilePath rust-build.log
+          if ($LASTEXITCODE -ne 0) { Get-Content rust-build.log -Tail 50 | ForEach-Object { Write-Output "::error::$_" }; exit 1 }
+          cargo build --release --manifest-path windows/native/Cargo.toml 2>&1 | Tee-Object -FilePath rust-release.log
+          if ($LASTEXITCODE -ne 0) { Get-Content rust-release.log -Tail 50 | ForEach-Object { Write-Output "::error::$_" }; exit 1 }
+          New-Item -ItemType Directory -Force package-x64/engine,package-x64/notices | Out-Null
+          Copy-Item windows/native/target/release/Continuum.exe,windows/native/target/release/validate.exe package-x64
+          $mt = Get-ChildItem 'C:/Program Files (x86)/Windows Kits/10/bin/*/x64/mt.exe' | Sort-Object FullName | Select-Object -Last 1
+          & $mt.FullName -nologo -manifest windows/Continuum/app.manifest '-outputresource:package-x64/Continuum.exe;#1'
+          if ($LASTEXITCODE -ne 0) { throw 'Manifest embedding failed' }
+      - name: Build limited engine and collect runtime notices
+        run: |
+          ./windows/scripts/fetch-engine.ps1 -Architecture x64 -Destination package-x64/engine
+          Copy-Item windows/native/engine-imports.go engine-source/main/distro/all/all.go -Force
+          $env:CGO_ENABLED='0'; $env:GOOS='windows'; $env:GOARCH='amd64'
+          Push-Location engine-source
+          go build -trimpath -ldflags='-s -w' -o ../package-x64/engine/xray.exe ./main
+          if ($LASTEXITCODE -ne 0) { Pop-Location; throw 'Engine build failed' }
+          Pop-Location
+          Copy-Item windows/native/README.txt,windows/native/THIRD_PARTY.md package-x64
+          cargo metadata --manifest-path windows/native/Cargo.toml --format-version 1 > dependencies.json
+          $meta = Get-Content dependencies.json -Raw | ConvertFrom-Json
+          $meta.packages | Select-Object name,version,license,source | ConvertTo-Json -Depth 6 | Set-Content package-x64/notices/rust-dependencies.json
+          foreach ($p in $meta.packages) {
+            $dir = Split-Path $p.manifest_path
+            $dest = "package-x64/notices/$($p.name)-$($p.version)"
+            New-Item -ItemType Directory -Force $dest | Out-Null
+            Get-ChildItem $dir -File | Where-Object { $_.Name -match '^(LICENSE|COPYING|NOTICE)' } | Copy-Item -Destination $dest
           }
-      - name: Publish self-contained x64 and ARM64 packages
+          Invoke-WebRequest https://raw.githubusercontent.com/rust-lang/rust/stable/LICENSE-MIT -OutFile package-x64/notices/LICENSE-RUST-MIT
+          Invoke-WebRequest https://raw.githubusercontent.com/rust-lang/rust/stable/LICENSE-APACHE -OutFile package-x64/notices/LICENSE-RUST-APACHE
+      - name: Actual Windows tunnel, six-minute voice transport and media checks
+        run: ./windows/scripts/smoke.ps1 -AppDirectory package-x64 -NativeApp
+      - name: Package x64 only with hard 20 MB download gate
         run: |
-          foreach ($arch in @('x64','arm64')) {
-            dotnet publish windows/Continuum/Continuum.csproj -c Release -r "win-$arch" --self-contained true -p:DebugType=None -p:DebugSymbols=false -o "package-$arch"
-            if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-            ./windows/scripts/fetch-engine.ps1 -Architecture $arch -Destination "package-$arch/engine"
-            Copy-Item windows/README.md,windows/THIRD_PARTY.md "package-$arch"
-            Invoke-WebRequest https://raw.githubusercontent.com/dotnet/runtime/v8.0.0/LICENSE.TXT -OutFile "package-$arch/LICENSE-DOTNET.TXT"
-            Invoke-WebRequest https://raw.githubusercontent.com/dotnet/runtime/v8.0.0/THIRD-PARTY-NOTICES.TXT -OutFile "package-$arch/THIRD-PARTY-NOTICES-DOTNET.TXT"
-          }
-      - name: Real engine, Windows scoped TUN, UDP and desktop smoke tests
-        run: ./windows/scripts/smoke.ps1 -AppDirectory package-x64
-      - name: Package downloads and hashes
-        run: |
+          Remove-Item package-x64/validate.exe
           New-Item -ItemType Directory -Force release | Out-Null
-          foreach ($arch in @('x64','arm64')) {
-            Compress-Archive -Path "package-$arch/*" -DestinationPath "release/Continuum-0.2.0-windows-$arch.zip"
-          }
-          Get-ChildItem release/*.zip | ForEach-Object { "$((Get-FileHash $_ -Algorithm SHA256).Hash.ToLowerInvariant())  $($_.Name)" } | Set-Content release/SHA256SUMS.txt
-          Get-ChildItem release/*.zip | ForEach-Object { Write-Output "::notice title=Package size::$($_.Name): $($_.Length) bytes" }
-      - uses: actions/upload-artifact@v4
-        with:
-          name: Continuum-Windows
-          path: release/*
+          Compress-Archive -Path package-x64/* -DestinationPath release/Continuum-0.3.0-windows-x64.zip -CompressionLevel Optimal
+          $size = (Get-Item release/Continuum-0.3.0-windows-x64.zip).Length
+          Write-Output "::notice title=Complete standalone download::$size bytes (decimal 20 MB limit)"
+          if ($size -ge 20000000) { throw 'Complete package exceeds 20 MB; do not publish' }
+          git archive --format=tar --output=app-source.tar HEAD windows .github/workflows/windows.yml
+          New-Item -ItemType Directory -Force source-bundle | Out-Null
+          tar -xf app-source.tar -C source-bundle
+          Copy-Item windows/native/Cargo.lock source-bundle/windows/native/
+          Copy-Item engine-source source-bundle/engine-source -Recurse
+          Remove-Item source-bundle/engine-source/.git -Recurse -Force
+          tar -czf release/Continuum-0.3.0-corresponding-source.tar.gz -C source-bundle .
+          Copy-Item windows/native/Cargo.lock release/Cargo.lock
+          Get-ChildItem release/* | ForEach-Object { "$((Get-FileHash $_ -Algorithm SHA256).Hash.ToLowerInvariant())  $($_.Name)" } | Set-Content release/SHA256SUMS.txt
       - uses: actions/upload-artifact@v4
         if: always()
         with:
@@ -62,10 +87,15 @@ jobs:
           path: |
             windows-desktop.png
             fixture/*.log
-      - name: Publish Windows preview downloads
+            rust-build.log
+            rust-release.log
+      - uses: actions/upload-artifact@v4
+        with:
+          name: Continuum-Windows
+          path: release/*
+      - name: Publish validated x64 download
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          $tag = "continuum-windows-0.2.0-${{ github.run_number }}"
-          gh release create $tag release/* --target '${{ github.sha }}' --prerelease --title 'Continuum 0.2 for Windows — DNS and connection stability fixes' --notes 'Fixes dropped HTTPS/SVCB DNS queries; adds cached parallel DoH without bootstrap/serial-timeout stalls, separate tunnel DNS timing, and avoids restarting live sessions on failed health sites or label-only updates. Extract the entire ZIP and run Continuum.exe as administrator. Windows Server CI includes real scoped TUN TCP/UDP, DNS regression/fallback, verified transfers and desktop checks. Physical Windows 10/11 and ARM64 acceptance remain unverified. No 200 ms guarantee; displayed HTTPS duration is not ping. Unsigned app; not an always-on kill switch.'
+          gh release create "continuum-windows-0.3.0-${{ github.run_number }}" release/* --target '${{ github.sha }}' --prerelease --title 'Continuum 0.3 — native Rust desktop, Windows x64' --notes 'Standalone x64-only Rust/Win32 desktop with a hard complete-download size gate under 20,000,000 bytes. No .NET/WebView runtime downloads. Managed UI has no repository/source/profile controls. Pins active sessions during healthy subscription updates; failed probes alone do not restart the same peer. Preserves CDN IP destinations; uses TCP video fallback instead of UDP/443 and longer voice session idle budgets. Protocol engine remains a limited Go Xray build, not all-Rust. Actual Windows TUN, 6-minute UDP and byte-exact segmented media regression tests passed; not a guarantee of Discord or YouTube service access on every exit. Extract the entire ZIP; run Continuum.exe as administrator. Unsigned preview, not a permanent kill switch. Source and license notices accompany release.'
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }

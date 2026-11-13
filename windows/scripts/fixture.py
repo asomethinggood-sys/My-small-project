@@ -14,6 +14,20 @@ class Handler(http.server.BaseHTTPRequestHandler):
         self.end_headers()
         self.wfile.write(body)
     def do_GET(self):
+        if self.path == '/media' and 'Range' in self.headers:
+            import re
+            match = re.fullmatch(r'bytes=(\d+)-(\d+)', self.headers['Range'])
+            if not match:
+                self.send_error(416); return
+            start, end = map(int, match.groups())
+            if not 0 <= start <= end < len(PAYLOAD):
+                self.send_error(416); return
+            body = PAYLOAD[start:end+1]
+            self.send_response(206)
+            self.send_header('Content-Range', f'bytes {start}-{end}/{len(PAYLOAD)}')
+            self.send_header('Content-Length', str(len(body)))
+            self.end_headers(); self.wfile.write(body)
+            return
         self.reply(PAYLOAD if self.path == '/download' else b'continuum-windows-route-fixture')
     def do_POST(self):
         length = int(self.headers.get('Content-Length', '0'))

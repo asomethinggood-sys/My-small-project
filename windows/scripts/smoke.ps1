@@ -1,4 +1,4 @@
-param([string]$AppDirectory = 'package-x64')
+param([string]$AppDirectory = 'package-x64', [switch]$NativeApp)
 $ErrorActionPreference = 'Stop'
 $core = (Resolve-Path "$AppDirectory/engine/xray.exe").Path
 $fixture = $null; $server = $null; $client = $null; $app = $null
@@ -12,8 +12,8 @@ function Wait-TestTunnel($child) {
     throw 'Test tunnel did not pass its actual route readiness check'
 }
 try {
-    dotnet run --project windows/Tests/Tests.csproj -c Release -- --write-fixture
-    if ($LASTEXITCODE -ne 0) { throw 'Unit tests failed' }
+    if ($NativeApp) { & "$AppDirectory/validate.exe" } else { dotnet run --project windows/Tests/Tests.csproj -c Release -- --write-fixture }
+    if ($LASTEXITCODE -ne 0) { throw 'Fixture generation failed' }
     & $core run -test -config fixture/full-tun.json
     if ($LASTEXITCODE -ne 0) { throw 'Full TUN configuration rejected by pinned engine' }
     $config = @{
@@ -35,7 +35,8 @@ try {
     if ($LASTEXITCODE -ne 0 -or $direct -ne 'continuum-windows-route-fixture') { throw 'Local HTTP fixture is not ready' }
     New-Item -ItemType Directory -Force windows/Tests/bin/Release/net8.0-windows/engine | Out-Null
     Copy-Item "$AppDirectory/engine/*" windows/Tests/bin/Release/net8.0-windows/engine -Force
-    dotnet run --project windows/Tests/Tests.csproj -c Release --no-build -- --engine-lifecycle 2>&1 | Tee-Object -Variable lifecycleLog
+    if ($NativeApp) { & "$AppDirectory/validate.exe" --lifecycle 2>&1 | Tee-Object -Variable lifecycleLog }
+    else { dotnet run --project windows/Tests/Tests.csproj -c Release --no-build -- --engine-lifecycle 2>&1 | Tee-Object -Variable lifecycleLog }
     if ($LASTEXITCODE -ne 0) {
         $detail = (($lifecycleLog | Select-Object -Last 18) -join "`n").Replace('%','%25').Replace("`r",'%0D').Replace("`n",'%0A')
         Write-Output "::error title=Local engine lifecycle diagnostics::$detail"
@@ -61,6 +62,10 @@ try {
     Write-Output 'PASS Actual Windows TUN HTTP marker and UDP echo through local Shadowsocks peer'
     python windows/scripts/network-check.py
     if ($LASTEXITCODE -ne 0) { throw 'TUN DNS and byte-verified transfers failed' }
+    if ($NativeApp) {
+        python windows/scripts/session-check.py
+        if ($LASTEXITCODE -ne 0) { throw 'Long-lived UDP/media regression failed' }
+    }
     & curl.exe --silent --fail --noproxy '' --proxy http://127.0.0.1:23082 --max-time 15 --output NUL https://example.com/
     if ($LASTEXITCODE -ne 0) { throw 'Certificate-verified public HTTPS through test peer failed' }
     Stop-Process -Id $client.Id -Force; $client.WaitForExit(); $client = $null
