@@ -1,1 +1,1 @@
-vless://9e364ada-34d1-4fc8-99d7-be5d4d68e1a3@mix-inflation-carnival-engage.trycloudflare.com:443?encryption=none&security=tls&sni=mix-inflation-carnival-engage.trycloudflare.com&type=ws&host=mix-inflation-carnival-engage.trycloudflare.com&path=%2F1f2add1e69c84d5e8b6577217ed7d36e#ArenaVPN
+vless://763a1628-3e9a-459d-b799-bbb699f7ae6c@nylon-costumes-absence-happens.trycloudflare.com:443?encryption=none&security=tls&sni=nylon-costumes-absence-happens.trycloudflare.com&type=ws&host=nylon-costumes-absence-happens.trycloudflare.com&path=%2F70e42fd7efdf4714bade5cb62f38ec75#ArenaVPN
