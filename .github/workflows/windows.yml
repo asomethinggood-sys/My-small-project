@@ -40,6 +40,15 @@ jobs:
           $mt = Get-ChildItem 'C:/Program Files (x86)/Windows Kits/10/bin/*/x64/mt.exe' | Sort-Object FullName | Select-Object -Last 1
           & $mt.FullName -nologo -manifest windows/Continuum/app.manifest '-outputresource:package-x64/Continuum.exe;#1'
           if ($LASTEXITCODE -ne 0) { throw 'Manifest embedding failed' }
+      - name: Native desktop launch gate
+        run: |
+          $app = Start-Process (Resolve-Path package-x64/Continuum.exe).Path -PassThru
+          Start-Sleep 4
+          $app.Refresh()
+          Write-Output "::notice title=Desktop startup::exited=$($app.HasExited) exit=$($app.ExitCode) title=$($app.MainWindowTitle) handle=$($app.MainWindowHandle)"
+          if ($app.HasExited -or $app.MainWindowTitle -ne 'Continuum') { if (!$app.HasExited) { Stop-Process -Id $app.Id }; throw 'Desktop launch failed' }
+          $app.CloseMainWindow() | Out-Null
+          if (!$app.WaitForExit(20000)) { Stop-Process -Id $app.Id; throw 'Desktop close timed out' }
       - name: Build limited engine and collect runtime notices
         run: |
           ./windows/scripts/fetch-engine.ps1 -Architecture x64 -Destination package-x64/engine

@@ -84,7 +84,8 @@ try {
     if (!$app.WaitForInputIdle(20000)) { throw 'Desktop window did not become idle' }
     Start-Sleep 3
     $app.Refresh()
-    if ($app.HasExited -or $app.MainWindowTitle -ne 'Continuum') { throw 'Continuum desktop launch failed' }
+    Write-Output "::notice title=Desktop process::exited=$($app.HasExited) title=$($app.MainWindowTitle) handle=$($app.MainWindowHandle)"
+    if ($app.HasExited -or $app.MainWindowTitle -ne 'Continuum') { throw "Continuum desktop launch failed: exited=$($app.HasExited) title=$($app.MainWindowTitle) handle=$($app.MainWindowHandle)" }
     Add-Type -AssemblyName System.Drawing,System.Windows.Forms
     $screen = [System.Windows.Forms.Screen]::PrimaryScreen.Bounds
     $bitmap = New-Object System.Drawing.Bitmap $screen.Width,$screen.Height
