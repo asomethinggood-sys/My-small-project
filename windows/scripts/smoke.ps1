@@ -24,7 +24,7 @@ try {
             @{tag='internet';protocol='freedom';settings=@{targetStrategy='UseIPv4'}},
             @{tag='fixture';protocol='freedom';settings=@{redirect='127.0.0.1:23080';finalRules=@(@{action='allow';network='tcp,udp';ip=@('127.0.0.1/32');port='23080'})}}
         )
-        routing = @{rules=@(@{type='field';ip=@('198.18.0.10/32');port='23080';outboundTag='fixture'})}
+        routing = @{rules=@(@{type='field';ip=@('198.18.0.10/32');port='23080,443,50000';outboundTag='fixture'})}
     }
     $config | ConvertTo-Json -Depth 15 | Set-Content fixture/server.json
     $fixture = Start-Process python -ArgumentList 'windows/scripts/fixture.py' -PassThru -WindowStyle Hidden

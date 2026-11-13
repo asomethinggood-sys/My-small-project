@@ -47,6 +47,7 @@ jobs:
           $app.Refresh()
           Write-Output "::notice title=Desktop startup::exited=$($app.HasExited) exit=$($app.ExitCode) title=$($app.MainWindowTitle) handle=$($app.MainWindowHandle)"
           if ($app.HasExited -or $app.MainWindowTitle -ne 'Continuum') { if (!$app.HasExited) { Stop-Process -Id $app.Id }; throw 'Desktop launch failed' }
+          ./windows/scripts/ui-audit.ps1 -Window $app.MainWindowHandle
           $app.CloseMainWindow() | Out-Null
           if (!$app.WaitForExit(20000)) { Stop-Process -Id $app.Id; throw 'Desktop close timed out' }
       - name: Build limited engine and collect runtime notices

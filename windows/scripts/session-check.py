@@ -10,7 +10,7 @@ import urllib.request
 def voice():
     with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as sock:
         sock.settimeout(5)
-        sock.connect(('198.18.0.10', 23080))
+        sock.connect(('198.18.0.10', 50000))
         start = time.monotonic()
         count = 0
         while time.monotonic() - start < 360:
@@ -33,6 +33,21 @@ def media():
                 assert r.status == 206 and r.read() == payload[start:end+1]
         time.sleep(2)
     print('::notice title=Media transfer::80 byte-exact HTTP 206 segments passed concurrently with UDP', flush=True)
+
+# Only QUIC's destination port is blocked, not all UDP. TCP on the same
+# destination remains routed through the peer for browser fallback.
+with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as sock:
+    sock.settimeout(2)
+    sock.sendto(b'quic-policy-check', ('198.18.0.10', 443))
+    try:
+        sock.recv(4096)
+        raise AssertionError('UDP/443 unexpectedly reached the echo peer')
+    except socket.timeout:
+        pass
+client = urllib.request.build_opener(urllib.request.ProxyHandler({}))
+with client.open('http://198.18.0.10:443/', timeout=10) as response:
+    assert response.read() == b'continuum-windows-route-fixture'
+print('::notice title=Video compatibility routing::UDP/443 suppressed; same-peer TCP/443 passes', flush=True)
 
 with concurrent.futures.ThreadPoolExecutor(max_workers=2) as executor:
     futures = [executor.submit(voice), executor.submit(media)]

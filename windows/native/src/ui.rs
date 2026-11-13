@@ -16,7 +16,7 @@ unsafe fn set(hwnd:HWND,s:&str){SetWindowTextW(hwnd,wide(s).as_ptr());}
 unsafe extern "system" fn procedure(hwnd:HWND,msg:u32,w:WPARAM,l:LPARAM)->LRESULT{
     let ptr=GetWindowLongPtrW(hwnd,GWLP_USERDATA) as *mut Ui;
     match msg {
-        WM_NCCREATE=>{let create=&*(l as *const CREATESTRUCTW);SetWindowLongPtrW(hwnd,GWLP_USERDATA,create.lpCreateParams as isize);return 1;},
+        WM_NCCREATE=>{let create=&*(l as *const CREATESTRUCTW);SetWindowLongPtrW(hwnd,GWLP_USERDATA,create.lpCreateParams as isize);return DefWindowProcW(hwnd,msg,w,l);},
         WM_CTLCOLORSTATIC=>{if !ptr.is_null(){SetTextColor(w as HDC,0x00343c24);SetBkColor(w as HDC,0x00eef4f6);return (*ptr).paper as isize;}},
         WM_ERASEBKGND=>{if !ptr.is_null(){let mut r=std::mem::zeroed();GetClientRect(hwnd,&mut r);FillRect(w as HDC,&r,(*ptr).paper);return 1;}},
         WM_TIMER=>{if !ptr.is_null(){let ui=&mut *ptr;let s=ui.state.lock().unwrap().clone();set(ui.title,&s.title);set(ui.detail,&s.detail);set(ui.button,if s.wanted{"Disconnect"}else{"Connect"});set(ui.time,&format!("{:02}:{:02}:{:02}",s.elapsed/3600,s.elapsed/60%60,s.elapsed%60));set(ui.check,&s.latency.map(|v|format!("{v} ms")).unwrap_or("—".into()));}return 0;},
