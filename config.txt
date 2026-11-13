@@ -1,1 +1,1 @@
-vless://b2c22799-e755-4345-9c59-bf271de1ec43@graphics-racial-cameron-superior.trycloudflare.com:443?encryption=none&security=tls&sni=graphics-racial-cameron-superior.trycloudflare.com&type=ws&host=graphics-racial-cameron-superior.trycloudflare.com&path=%2Fe2718ec373214665a5543f0c18e45253#ArenaVPN
+vless://ae1fe86d-3c7c-40fd-be5c-364db5ac1016@task-troy-nested-breakfast.trycloudflare.com:443?encryption=none&security=tls&sni=task-troy-nested-breakfast.trycloudflare.com&type=ws&host=task-troy-nested-breakfast.trycloudflare.com&path=%2Fe6fdf238599040edbdb0c240bc06e1e8#ArenaVPN
