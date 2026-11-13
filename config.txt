@@ -1,1 +1,1 @@
-vless://ae1fe86d-3c7c-40fd-be5c-364db5ac1016@task-troy-nested-breakfast.trycloudflare.com:443?encryption=none&security=tls&sni=task-troy-nested-breakfast.trycloudflare.com&type=ws&host=task-troy-nested-breakfast.trycloudflare.com&path=%2Fe6fdf238599040edbdb0c240bc06e1e8#ArenaVPN
+vless://0423202e-94a7-4261-ba57-597d001cb005@cope-travesti-successful-leads.trycloudflare.com:443?encryption=none&security=tls&sni=cope-travesti-successful-leads.trycloudflare.com&type=ws&host=cope-travesti-successful-leads.trycloudflare.com&path=%2F553cd10b9fbc40e1ab50a94ade37f27c#ArenaVPN
