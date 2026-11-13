@@ -8,4 +8,13 @@
         <item name="android:windowBackground">#111B20</item>
         <item name="android:windowActionModeOverlay">true</item>
     </style>
+    <style name="ContinuumTheme" parent="android:style/Theme.Material.Light.NoActionBar">
+        <item name="android:fontFamily">sans</item>
+        <item name="android:colorAccent">#275D47</item>
+        <item name="android:windowLightStatusBar">true</item>
+        <item name="android:statusBarColor">#F6F4EE</item>
+        <item name="android:navigationBarColor">#F6F4EE</item>
+        <item name="android:windowBackground">#F6F4EE</item>
+        <item name="android:windowActionModeOverlay">true</item>
+    </style>
 </resources>

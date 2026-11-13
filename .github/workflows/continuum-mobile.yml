@@ -1,0 +1,159 @@
+name: Continuum mobile
+on:
+  push:
+    branches: [arena/f056ce38-my-small-project]
+    paths: [android/**, .github/workflows/continuum-mobile.yml]
+permissions:
+  contents: read
+concurrency:
+  group: continuum-mobile-${{ github.ref }}
+  cancel-in-progress: true
+env:
+  ORG_GRADLE_PROJECT_continuumManaged: 'true'
+jobs:
+  build:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '21'
+      - uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '8.11.1'
+      - name: Prepare SDK and pinned engine
+        run: |
+          "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" 'platforms;android-35' 'build-tools;35.0.0'
+          bash android/scripts/fetch-core.sh
+      - name: Rust JNI, JVM policies and debug lint
+        working-directory: android
+        run: |
+          set -o pipefail
+          gradle --no-daemon -PtargetAbi=x86_64 :app:testDebugUnitTest :app:lintDebug :app:assembleDebug 2>&1 | tee build-log.txt
+      - name: Configure signing when privately provisioned
+        env:
+          CONTINUUM_SIGNING_KEY_B64: ${{ secrets.CONTINUUM_SIGNING_KEY_B64 }}
+          CONTINUUM_STORE_PASSWORD: ${{ secrets.CONTINUUM_STORE_PASSWORD }}
+          CONTINUUM_KEY_ALIAS: ${{ secrets.CONTINUUM_KEY_ALIAS }}
+          CONTINUUM_KEY_PASSWORD: ${{ secrets.CONTINUUM_KEY_PASSWORD }}
+        run: python3 android/scripts/configure-signing.py
+      - name: Build ARM64 and universal managed release
+        working-directory: android
+        run: |
+          mkdir -p release
+          gradle --no-daemon -PtargetAbi=arm64-v8a :app:assembleRelease :app:lintRelease
+          cp app/build/outputs/apk/release/app-release.apk release/continuum-0.7.0-arm64.apk
+          gradle --no-daemon -PtargetAbi=universal :app:assembleRelease
+          cp app/build/outputs/apk/release/app-release.apk release/continuum-0.7.0-universal.apk
+          for apk in release/*.apk; do
+            "$ANDROID_HOME/build-tools/35.0.0/apksigner" verify --verbose --print-certs "$apk" >> release/SIGNING.txt
+            "$ANDROID_HOME/build-tools/35.0.0/zipalign" -c -P 16 4 "$apk"
+          done
+          python3 scripts/check-apk.py release/continuum-0.7.0-arm64.apk
+          python3 scripts/check-apk.py release/continuum-0.7.0-universal.apk universal
+          sha256sum release/*.apk > release/SHA256SUMS
+          wc -c release/*.apk > release/SIZES.txt
+      - name: Start local network fixtures and enable KVM
+        run: |
+          python3 -u android/scripts/vpn-fixture.py > "$RUNNER_TEMP/fixture.log" 2>&1 &
+          pid=$!
+          ready=false
+          for i in $(seq 1 150); do
+            if grep -q FIXTURE_READY "$RUNNER_TEMP/fixture.log"; then ready=true; break; fi
+            kill -0 "$pid" || { cat "$RUNNER_TEMP/fixture.log"; exit 1; }
+            sleep 2
+          done
+          [[ "$ready" == true ]]
+          echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' | sudo tee /etc/udev/rules.d/99-kvm.rules
+          sudo udevadm control --reload-rules
+          sudo udevadm trigger --name-match=kvm
+      - name: Network regressions and consumer UI tests
+        env:
+          RELEASE_APP_ID: app.continuum
+          RELEASE_ACTIVITY: app.continuum.ContinuumActivity
+          RELEASE_ARM64_APK: android/release/continuum-0.7.0-arm64.apk
+        run: |
+          set -o pipefail
+          bash android/scripts/emulator-session.sh 2>&1 | tee android/emulator-boot.log
+      - name: Reviewable consumer screenshots and corresponding source
+        run: |
+          python3 -m pip install --quiet Pillow==11.3.0
+          python3 android/scripts/continuum-preview.py
+          # Legacy debug screenshots are test intermediates, not this product.
+          rm -f android/release/nyx-home.png android/release/nyx-locations.png
+          git archive --format=tar.gz --output=android/release/continuum-source.tar.gz HEAD android
+          cp android/THIRD_PARTY.md android/LICENSE* android/release/
+          cp android/third-party/libv2ray-sources.jar android/release/
+          cp android/network-report.txt android/release/
+      - uses: actions/upload-artifact@v4
+        with:
+          name: continuum-mobile-release
+          path: android/release/
+      - name: Failure diagnostics
+        if: failure()
+        run: python3 android/scripts/ci-diagnostics.py
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: continuum-mobile-validation
+          path: |
+            android/app/build/reports/
+            android/app/build/outputs/androidTest-results/
+            android/build-log.txt
+            android/emulator-boot.log
+            android/emulator-runtime.log
+            android/emulator-log.txt
+  compatibility:
+    needs: build
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - api: 26
+            arch: x86
+            image: google_apis
+          - api: 35
+            arch: x86_64
+            image: google_apis_ps16k
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          name: continuum-mobile-release
+          path: android/release
+      - name: Enable KVM
+        run: |
+          echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' | sudo tee /etc/udev/rules.d/99-kvm.rules
+          sudo udevadm control --reload-rules
+          sudo udevadm trigger --name-match=kvm
+      - name: Audit exact managed release
+        env:
+          AUDIT_API: ${{ matrix.api }}
+          AUDIT_ARCH: ${{ matrix.arch }}
+          AUDIT_IMAGE: ${{ matrix.image }}
+        run: bash android/scripts/continuum-compatibility.sh
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: continuum-compatibility-${{ matrix.api }}
+          path: android/managed-compatibility/
+  publish:
+    needs: [build, compatibility]
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: continuum-mobile-release
+          path: release
+      - name: Publish verified managed mobile build
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+        run: |
+          gh release create "continuum-mobile-0.7.0-${GITHUB_RUN_NUMBER}" release/* --target "$GITHUB_SHA" --prerelease --title 'Continuum mobile 0.7 — simpler, managed connection' --notes 'Consumer Continuum UI: no repository/source URL, endpoint/provider screens or custom-profile import. Fixed built-in connection source enforced in release builds; old custom settings discarded. Warm editorial UI with accessible native controls. Normal VPN permissions and privacy explanation retained. Runtime/source/license notices accompany the distribution; UI cleanup is not backend secrecy. Real debug engine regressions plus consumer UI tests, minified release UI and API26/16KB API35 installation checks gate publication. App package app.continuum; signature may differ from previous preview installs. Physical phone compatibility remains unverified.'

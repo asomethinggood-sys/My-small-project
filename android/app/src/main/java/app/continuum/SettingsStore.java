@@ -17,9 +17,9 @@ public final class SettingsStore {
             if(!value.has("selection"))value.put("selection",-1);
             if(!value.has("profiles"))value.put("profiles",new JSONArray());
         }catch(JSONException impossible){throw new IllegalStateException(impossible);}
-        return value;
+        return BuildConfig.MANAGED_ONLY?ManagedSettings.apply(value):value;
     }
-    public void save(JSONObject value) throws IOException {write("settings-v2.json",value);}
+    public void save(JSONObject value) throws IOException {write("settings-v2.json",BuildConfig.MANAGED_ONLY?ManagedSettings.apply(value):value);}
     public boolean paused() {return new File(directory,"user-paused").exists();}
     public void pause() {
         try {if(!new File(directory,"user-paused").exists()&&!new File(directory,"user-paused").createNewFile())throw new IOException();}

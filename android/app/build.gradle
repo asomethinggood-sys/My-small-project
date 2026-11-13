@@ -1,4 +1,5 @@
 plugins { id 'com.android.application' }
+def managed = providers.gradleProperty('continuumManaged').getOrElse('false') == 'true'
 def targetAbi = providers.gradleProperty('targetAbi').getOrElse('arm64-v8a')
 def supportedAbis = ['arm64-v8a', 'armeabi-v7a', 'x86_64', 'x86']
 def targetAbis = targetAbi == 'universal' ? supportedAbis : [targetAbi]
@@ -11,15 +12,19 @@ android {
     namespace 'app.continuum'
     compileSdk 35
     defaultConfig {
-        applicationId 'app.nyx.vpn'
+        applicationId managed ? 'app.continuum' : 'app.nyx.vpn'
         minSdk 26
         targetSdk 35
-        versionCode 6
-        versionName '0.6.0-candidate'
+        versionCode managed ? 7 : 6
+        versionName managed ? '0.7.0' : '0.6.0-candidate'
+        buildConfigField 'boolean', 'MANAGED_UI', managed.toString()
+        buildConfigField 'boolean', 'MANAGED_ONLY', 'false'
+        resValue 'bool', 'developer_screens', 'true'
         ndk { abiFilters.addAll(targetAbis) }
         testInstrumentationRunner 'androidx.test.runner.AndroidJUnitRunner'
         buildConfigField 'String', 'BUILD_ABI', '"' + targetAbi + '"'
     }
+    if (managed) { sourceSets.main.manifest.srcFile 'src/continuum/AndroidManifest.xml' }
     buildFeatures { buildConfig true }
     compileOptions { coreLibraryDesugaringEnabled true; sourceCompatibility JavaVersion.VERSION_17; targetCompatibility JavaVersion.VERSION_17 }
     // Direct, page-aligned loading avoids native-library extraction at install.
@@ -47,12 +52,21 @@ android {
     }
     buildTypes {
         release {
+            buildConfigField 'boolean', 'MANAGED_ONLY', managed.toString()
+            resValue 'bool', 'developer_screens', (!managed).toString()
             debuggable false
             minifyEnabled true
             shrinkResources true
             proguardFiles getDefaultProguardFile('proguard-android-optimize.txt'), 'proguard-rules.pro'
             signingConfig System.getenv('CONTINUUM_KEYSTORE_PATH') ? signingConfigs.stable : signingConfigs.debug
         }
+    }
+}
+// Debug-only engine fixtures retain their existing isolated package identity.
+// The shipped managed release always uses app.continuum and enforces its policy.
+androidComponents {
+    onVariants(selector().withBuildType('debug')) { variant ->
+        if (managed) variant.applicationId.set('app.nyx.vpn')
     }
 }
 tasks.named('preBuild').configure { dependsOn rustTask }
