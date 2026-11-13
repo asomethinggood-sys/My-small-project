@@ -13,7 +13,25 @@ PACKAGE="system-images;android-$API;$IMAGE;$ARCH"
 printf 'no\n' | "$SDK/cmdline-tools/latest/bin/avdmanager" create avd --force --name continuum --package "$PACKAGE" --path "$ANDROID_AVD_HOME/continuum.avd"
 printf 'avd.ini.encoding=UTF-8\npath=%s\ntarget=android-%s\n' "$ANDROID_AVD_HOME/continuum.avd" "$API" > "$ANDROID_AVD_HOME/continuum.ini"
 "$SDK/emulator/emulator" -avd continuum -no-window -gpu swiftshader_indirect -noaudio -no-boot-anim -no-snapshot -memory 2048 -cores 2 > "$DIR/emulator.log" 2>&1 &
-pid=$!; trap 'kill "$pid" 2>/dev/null || true' EXIT
+pid=$!
+cleanup() {
+  result=$?
+  if [[ "$result" != 0 ]]; then
+    adb logcat -d -s AndroidRuntime > "$DIR/crashes.txt" 2>/dev/null || true
+    python3 - "$DIR" <<'PY'
+from pathlib import Path
+import sys
+for p in Path(sys.argv[1]).glob('*'):
+    if p.suffix in ('.txt','.xml','.log'):
+        text=p.read_text(errors='replace')[-6000:]
+        print('::error title='+p.name+'::'+text.replace('%','%25').replace('\n','%0A').replace('\r','%0D'))
+PY
+  fi
+  kill "$pid" 2>/dev/null || true
+  exit "$result"
+}
+trap cleanup EXIT
+trap 'echo "::error title=Compatibility command::Failed at line $LINENO: $BASH_COMMAND"' ERR
 timeout 180 adb wait-for-device
 booted=false
 for attempt in $(seq 1 90); do
