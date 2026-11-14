@@ -8,6 +8,9 @@ import os
 from pathlib import Path
 import subprocess
 import tempfile
+import re
+import time
+import urllib.request
 
 TAG = 'continuum-beta-control'
 ASSET = 'control.json'
@@ -28,8 +31,23 @@ def read():
 
 
 def enabled():
-    value = read()
-    return value['enabled'] and value.get('phase') == 'active'
+    # Ten workers polling via gh would waste the shared repository API budget.
+    # The control asset is deliberately public and non-secret; download it
+    # directly instead. Control writes/activation fencing still use gh above.
+    repository = os.environ.get('GITHUB_REPOSITORY', '')
+    if not re.fullmatch(r'[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+', repository):
+        return False
+    url = f'https://github.com/{repository}/releases/download/{TAG}/{ASSET}?check={int(time.time())}'
+    request = urllib.request.Request(url, headers={'Cache-Control': 'no-cache', 'User-Agent': 'Continuum-Control/1.0'})
+    try:
+        with urllib.request.urlopen(request, timeout=15) as response:
+            data = response.read(4097)
+            if len(data) > 4096 or not response.geturl().startswith('https://'):
+                return False
+            value = json.loads(data)
+            return value.get('schema') == 1 and value.get('enabled') is True and value.get('phase') == 'active'
+    except Exception:
+        return False
 
 
 def write(value):

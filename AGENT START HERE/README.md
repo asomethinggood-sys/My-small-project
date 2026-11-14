@@ -1,5 +1,11 @@
 # AGENT START HERE — Continuum 1.0 OPEN BETA
 
+## Importing into another repository (latest requested mode)
+
+**Read `PORTABLE-HANDOFF.md` and use `continuum-portable.zip`.** The ready export installs all workflows and binds the app to the destination automatically. After import the operator runs **Start beta**, and later **Stop beta**. No code edits or beta variables are needed. The old source APK cannot read a different repository; Start beta automatically builds the destination APK before starting servers.
+
+`NEXT_AGENT_PROMPT.txt` now describes this portable flow. The sections below document the older, original-repository activation mode only; do not mix its variable-based controls with the portable export's Start/Stop control release.
+
 ## Current scope
 
 **The Android APK is built. The next agent's job is server activation, not writing the app.**

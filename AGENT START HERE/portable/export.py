@@ -77,6 +77,7 @@ def export(destination):
     put(destination, '.github/workflows/start-beta.yml', (HERE / 'start.yml').read_text())
     put(destination, '.github/workflows/stop-beta.yml', (HERE / 'stop.yml').read_text())
     put(destination, 'README.md', (HERE / 'DESTINATION-README.md').read_text())
+    put(destination, 'PROVENANCE.md', '# Source and licensing\n\nPrepared from https://github.com/asomethinggood-sys/My-small-project/tree/arena%2Ff056ce38-my-small-project . Preserve android/LICENSE, android/THIRD_PARTY.md and bundled dependency notices when redistributing. The destination changes discovery ownership; it does not erase original authorship or license obligations.\n')
     put(destination, '.gitignore', (ROOT / '.gitignore').read_text() + '\n.venv/\n')
     files = {p.relative_to(destination).as_posix(): hashlib.sha256(p.read_bytes()).hexdigest() for p in sorted(destination.rglob('*')) if p.is_file()}
     put(destination, 'PORTABLE-MANIFEST.json', json.dumps({'schema': 1, 'files': files}, indent=2)+'\n')

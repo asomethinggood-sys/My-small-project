@@ -1,17 +1,23 @@
-Activate the ten Continuum Android 1.0 OPEN BETA servers from "AGENT START HERE". The APK and app implementation are already built; your purpose is activation and deployment verification, NOT rebuilding or redesigning the app.
+Import the prepared portable Continuum 1.0 OPEN BETA into my destination repository, then run its workflows. Do not redesign the app, write server code, manually edit discovery URLs, or activate anything in the original source repository.
 
-First read README.md, BUILD-RESULTS.md and the server-activation items in ACCEPTANCE.md. Use only the current branch assigned by Arena; keep main unchanged and do not create a PR unless I explicitly permit it.
+SOURCE:
+https://github.com/asomethinggood-sys/My-small-project/tree/arena%2Ff056ce38-my-small-project
+Git clone URL: https://github.com/asomethinggood-sys/My-small-project.git
+Source branch: arena/f056ce38-my-small-project
 
-Hosting is already specified: ten GitHub-hosted workers using the existing Xray + Cloudflare Quick Tunnel setup. I reported support approval. Do not ask again where the servers run, buy a VPS, or create a new directory service.
+1. Read "AGENT START HERE/PORTABLE-HANDOFF.md" from that branch. Clone/download the source into a separate temporary directory; do not replace your destination repository's .git directory or change the branch assigned by Arena.
+2. Use the ready "AGENT START HERE/continuum-portable.zip", or run the supplied exporter against a NEW scratch directory:
+   python3 "AGENT START HERE/portable/export.py" --output /tmp/continuum-ready
+   The exporter already patches the app, supplies all active workflow files and makes discovery point at the destination automatically. No code edits are required.
+3. Import the prepared tree into a dedicated PUBLIC destination repository. Preserve its .git directory, unrelated user work and license/source notices. Use the current allowed branch and ensure it is the destination default branch before dispatch; do not silently overwrite an existing project's workflows or switch branches against Arena restrictions. Push the prepared files when authorized. Do not import the original repository's legacy workflow directory on top of this export.
+4. Ensure GitHub Actions is enabled and allowed to write releases and dispatch workflows. No PAT, manually configured beta variables, server credentials, VPS or purchased domain are needed. Account/org restrictions still need the owner's approval; never ask for credentials in chat.
+5. Run ONLY "Start beta" (start-beta.yml) on that destination's default branch. The workflow automatically checks the destination, builds/tests/publishes a destination-specific Android APK, enables the control state, and dispatches all ten prepared server workers. Do not run the source repository's old APK build or manually start each of the ten workers.
+6. Wait for the actual build and readiness results, then give me the APK download from MY destination repository and the real server run statuses. Do not claim everything is live the instant a workflow is queued.
 
-When I authorize activation:
-1. Install workflows/continuum-beta-01.yml through continuum-beta-10.yml plus continuum-beta-slot.yml into .github/workflows. Keep ENABLE_CONTINUUM_BETA=false until ready. Preserve the existing legacy vpn.yml and vpn-config/config.txt.
-2. Ensure the installed workflows can be dispatched on the current branch. If GitHub requires default-branch registration, explain that exact blocker and get permission rather than modifying main or repeatedly retrying denied calls.
-3. Check runner concurrency/billing and workflow-token access to variable reads, release uploads and successor dispatch. Never request tokens/passwords in chat.
-4. Set ENABLE_CONTINUUM_BETA=true. There is NO seven-day cap, end-date, lease renewal or rechain setting. The workers queue successors and rotate until I explicitly stop them. Per-address expiration and per-run timeouts must remain because individual server addresses are temporary.
-5. Start slot 01, verify actual TLS/WebSocket/VLESS readiness and its slot.json, then start 02 through 10. Confirm actual US egress rather than assuming a runner label proves it. Report actual run IDs/status without publishing connection credentials in chat.
-6. Verify the already-built app's auto-selection and manual server list against the running pool. Observe rotation/failure behavior and report any real defect honestly. Do not claim every existing call or download survives server replacement.
+IMPORTANT: The APK already released by the original repository still reads the original repository. Use the new APK automatically produced by Start beta in the destination. This is automatic rebinding, not new development. Candidate signing may require uninstalling an older differently signed app.
 
-To stop: set ENABLE_CONTINUUM_BETA=false FIRST, then cancel only the ten workers' running/pending runs. While the switch is true, cancellation of one job may allow its queued successor to begin. Do not stop the unrelated legacy service.
+The experiment rotates until I explicitly stop it. There is no seven-day cutoff, end date, lease renewal or rechain variable. Individual jobs/addresses still expire and are replaced. No perpetual hosting or seamless call-preservation guarantee is possible against quotas, outages or server replacement.
 
-The app reads ten independent release assets, displays only US🇺🇸_01 ... US🇺🇸_10, and measures full HTTPS latency—not ICMP ping. Until activation it correctly reports unavailable servers. Do not invent server data, latency, deployment success or private credentials. No experiment-wide deadline should be reintroduced.
+When I say stop, run ONLY "Stop beta" (stop-beta.yml). It publishes the off state and cancels beta workers. A stop during an app build invalidates that pending start so the old build cannot re-enable servers. Do not stop unrelated services.
+
+My hosting choice and reported support approval are already established. Do not ask again where the exits run. Respect actual runner quotas, actual US geography checks, source licenses and credential privacy. If permissions/default-branch registration block activation, report that exact blocker rather than modifying main without approval, retrying a denied action indefinitely, inventing results or rewriting the app.

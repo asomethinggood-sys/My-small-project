@@ -47,6 +47,11 @@ class PortableTests(unittest.TestCase):
     def test_stop_disables_before_any_cancellation(self):
         def check(*args):self.assertFalse(self.state['enabled']);return '[]'
         self.state['enabled']=True;self.invoke('stop',check);self.assertEqual(self.state['phase'],'stopped')
+    def test_worker_poll_uses_public_asset_not_repository_api(self):
+        response=io.BytesIO(b'{"schema":1,"enabled":true,"phase":"active"}')
+        response.geturl=lambda:'https://github.com/destination/example/control'
+        with patch.object(control,'gh',side_effect=AssertionError('API must not be polled')),patch.object(control.urllib.request,'urlopen',return_value=response):
+            self.assertTrue(control.enabled())
     def test_private_destination_rejected(self):
         with patch.object(control,'gh',return_value=json.dumps({'private':True,'default_branch':'main'})):
             with self.assertRaises(ValueError):control.preflight()
