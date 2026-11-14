@@ -1,0 +1,20 @@
+Continue the staged Continuum Android 1.0 OPEN BETA project in the folder "AGENT START HERE".
+
+FIRST read README.md, ACCEPTANCE.md, apply_overlay.py, the staged server worker/workflows and Android overlay. Do not ask me again where the exits run: this experiment uses the existing GitHub-hosted Xray + Cloudflare Quick Tunnel mechanism, with ten independent slots. I reported support approval, but still respect quotas, explicit budgets and the off switch.
+
+CURRENT AUTHORIZATION: DO NOT START WORKFLOWS OR SERVERS. Do not dispatch, enable repository variables, upload connection assets, install active workflow YAML, or push changes that trigger CI until I explicitly authorize those actions. A build-only workflow is still a workflow and needs authorization unless you can build locally. Keep main unchanged, use only the branch Arena currently assigns, and do not create a PR without permission.
+
+The prior agent created dormant source, not a completed beta. Nine offline Python tests passed. No Java/Android build, APK, live ten-server test or failover acceptance exists yet. The workspace had no Java/Gradle/Android SDK. Do not claim the old 0.7 APK is the new version.
+
+Review and finish these requirements:
+- Ten independent slot workflows with fixed app labels US🇺🇸_01 through US🇺🇸_10; verify actual US exits before publishing.
+- Reuse the existing release-download discovery approach, with one slot.json asset per continuum-beta-01..10 tag. Do not add a separate directory server or overwrite vpn-config/config.txt.
+- The app includes discovery addresses, not fabricated live servers. Fetch/validate expiry and generation, measure real HTTPS-through-profile latency for all available candidates, choose the best, and offer a Servers dialog with manual preferred selection and checks. Do not call HTTPS timing ICMP ping.
+- No repository, endpoint, protocol, raw error or custom-import details in product UI. Preserve legal source/license notices in distributions.
+- Keep healthy active sessions stable; fail over on failures/expiry. Disconnect must cancel future recovery and reject late probe/install results. No seamless-call or 24/7 guarantee.
+- Normal rotation uses a renewable, maximum-seven-day experiment lease, a global off switch and a separate rechain switch. It is not an unbounded unattended forever loop. Early failures stop for operator attention. Do not remove safeguards or repeatedly retry denied dispatches.
+- Build managed app.continuum versionCode 100 / 1.0.0-open-beta, ARM64 and universal candidates, with stable private signing where provisioned. Report actual sizes/hashes. Do not request credentials in chat.
+
+Start with the offline tests and dry-run overlay validator. If a local Android toolchain is available, build and run all acceptance checks there without starting Actions. Otherwise clearly report the need for permission for the supplied manual build-only workflow. New workflow_dispatch files may need default-branch registration; do not bypass main/no-PR restrictions to solve that.
+
+When I separately authorize activation, verify one slot first, then the other nine, then normal rotation and deliberate failure. The build workflow must not start servers. Record real tests and outstanding limits in ACCEPTANCE.md before publishing the APK. Prefer write_file/edit_file for implementation. Do not stop at a claim that files exist: distinguish source review, compilation, APK delivery, live serving and failover evidence.

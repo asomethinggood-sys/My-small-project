@@ -1,0 +1,10 @@
+name: Continuum US_03
+on: workflow_dispatch
+permissions:
+  contents: write
+  actions: write
+jobs:
+  slot:
+    uses: ./.github/workflows/continuum-beta-slot.yml
+    with:
+      slot: 3

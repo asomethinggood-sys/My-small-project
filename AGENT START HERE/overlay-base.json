@@ -1,0 +1,7 @@
+{
+  "android/app/build.gradle": "b63c5da0598335beebcf6acafb080dff671971955accf102fc7d35b34faed5ee",
+  "android/app/src/main/java/app/continuum/ContinuumActivity.java": "815d846a2a2993b33217b41f302e3418f34af756601297a8bf3054961210bb38",
+  "android/app/src/main/java/app/continuum/ContinuumSettings.java": "1e820042384717004595263ae13010018b1537945d062f99a2f0009a4176c35f",
+  "android/app/src/main/java/app/continuum/ManagedSettings.java": "1fe9d266fcfdf7837f16e90acb9179caccc467a3348923627020e2059f1944a1",
+  "android/app/src/main/java/app/continuum/TunnelService.java": "7d70d366ed156737cd39d7d46c3fb49a6bc0c29a8430d687b82e769f78d71774"
+}

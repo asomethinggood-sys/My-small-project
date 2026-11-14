@@ -1,0 +1,35 @@
+name: Continuum beta slot worker
+on:
+  workflow_call:
+    inputs:
+      slot:
+        required: true
+        type: number
+permissions:
+  contents: write
+  actions: write
+jobs:
+  serve:
+    if: vars.ENABLE_CONTINUUM_BETA == 'true'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 340
+    concurrency:
+      group: continuum-beta-slot-${{ inputs.slot }}
+      cancel-in-progress: false
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install pinned existing engine and connector
+        run: |
+          mkdir -p "$HOME/bin"
+          bash scripts/download-binaries.sh "$HOME/bin" --xray-only
+          bash scripts/download-cloudflared.sh "$HOME/bin"
+      - name: Tune ephemeral runner
+        run: sudo bash scripts/tune-tunnel-runtime.sh
+      - name: Readiness, independent publication and operator-controlled rotation
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          WORKFLOW_REF: ${{ github.ref_name }}
+          ENABLE_CONTINUUM_BETA: ${{ vars.ENABLE_CONTINUUM_BETA }}
+          SLOT: ${{ inputs.slot }}
+        run: python3 'AGENT START HERE/server/run_slot.py' --slot "$SLOT"

@@ -1,0 +1,124 @@
+name: Continuum 1.0 beta candidate build (no servers)
+on:
+  push:
+    branches: [arena/f056ce38-my-small-project]
+    paths:
+      - 'AGENT START HERE/overlay/**'
+      - 'AGENT START HERE/apply_overlay.py'
+      - '.github/workflows/continuum-beta-build.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: continuum-beta-apk-${{ github.ref }}
+  cancel-in-progress: false
+env:
+  ORG_GRADLE_PROJECT_continuumManaged: 'true'
+jobs:
+  candidate:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+      - name: Apply only reviewed Android overlay
+        run: python3 'AGENT START HERE/apply_overlay.py' --apply
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '21'
+      - uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '8.11.1'
+      - name: Prepare SDK and pinned dependency
+        run: |
+          "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" 'platforms;android-35' 'build-tools;35.0.0'
+          bash android/scripts/fetch-core.sh
+      - name: Parser, selection, existing regressions and lint
+        working-directory: android
+        run: |
+          set -o pipefail
+          gradle --no-daemon -PtargetAbi=x86_64 :app:testDebugUnitTest :app:lintDebug :app:assembleDebug 2>&1 | tee build-log.txt
+      - name: Signing (use a stable private key before public beta distribution)
+        env:
+          CONTINUUM_SIGNING_KEY_B64: ${{ secrets.CONTINUUM_SIGNING_KEY_B64 }}
+          CONTINUUM_STORE_PASSWORD: ${{ secrets.CONTINUUM_STORE_PASSWORD }}
+          CONTINUUM_KEY_ALIAS: ${{ secrets.CONTINUUM_KEY_ALIAS }}
+          CONTINUUM_KEY_PASSWORD: ${{ secrets.CONTINUUM_KEY_PASSWORD }}
+        run: python3 android/scripts/configure-signing.py
+      - name: Build exact ARM64 and universal candidates
+        working-directory: android
+        run: |
+          mkdir -p release
+          gradle --no-daemon -PtargetAbi=arm64-v8a :app:assembleRelease :app:lintRelease
+          cp app/build/outputs/apk/release/app-release.apk release/continuum-1.0.0-open-beta-arm64.apk
+          gradle --no-daemon -PtargetAbi=universal :app:assembleRelease
+          cp app/build/outputs/apk/release/app-release.apk release/continuum-1.0.0-open-beta-universal.apk
+          for apk in release/*.apk; do
+            "$ANDROID_HOME/build-tools/35.0.0/apksigner" verify --verbose --print-certs "$apk" >> release/SIGNING.txt
+            "$ANDROID_HOME/build-tools/35.0.0/zipalign" -c -P 16 4 "$apk"
+          done
+          python3 scripts/check-apk.py release/continuum-1.0.0-open-beta-arm64.apk
+          python3 scripts/check-apk.py release/continuum-1.0.0-open-beta-universal.apk universal
+          sha256sum release/*.apk > release/SHA256SUMS
+          wc -c release/*.apk > release/SIZES.txt
+      - name: Run bounded local fixture only (not the ten servers)
+        run: |
+          python3 -u android/scripts/vpn-fixture.py > "$RUNNER_TEMP/fixture.log" 2>&1 &
+          pid=$!
+          ready=false
+          for i in $(seq 1 150); do
+            if grep -q FIXTURE_READY "$RUNNER_TEMP/fixture.log"; then ready=true; break; fi
+            kill -0 "$pid" || { echo 'Fixture failed'; exit 1; }
+            sleep 2
+          done
+          [[ "$ready" == true ]]
+          echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' | sudo tee /etc/udev/rules.d/99-kvm.rules
+          sudo udevadm control --reload-rules
+          sudo udevadm trigger --name-match=kvm
+      - name: Emulator regression and minified release launch
+        env:
+          RELEASE_APP_ID: app.continuum
+          RELEASE_ACTIVITY: app.continuum.ContinuumActivity
+          RELEASE_ARM64_APK: android/release/continuum-1.0.0-open-beta-arm64.apk
+        run: |
+          set -o pipefail
+          bash android/scripts/emulator-session.sh 2>&1 | tee android/emulator-boot.log
+      - name: Include actual overlaid source and licenses
+        run: |
+          cp android/THIRD_PARTY.md android/LICENSE* android/release/
+          tar --exclude=android/release --exclude=android/.gradle --exclude='*/build' --exclude='*/target' --exclude=android/app/libs --exclude=android/third-party -czf android/release/continuum-beta-source.tar.gz android
+          printf '%s\n' 'Candidate only. Ten-server end-to-end/failover and physical-device acceptance are not implied by this build.' > android/release/ACCEPTANCE.txt
+      - uses: actions/upload-artifact@v4
+        with:
+          name: continuum-1.0-open-beta-candidate-NOT-YET-ACCEPTED
+          path: android/release/
+      - name: Failure diagnostics
+        if: failure()
+        run: python3 android/scripts/ci-diagnostics.py
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: continuum-beta-build-validation
+          path: |
+            android/app/build/reports/
+            android/build-log.txt
+            android/emulator-log.txt
+            android/emulator-boot.log
+  publish-apk:
+    needs: candidate
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: continuum-1.0-open-beta-candidate-NOT-YET-ACCEPTED
+          path: release
+      - name: Publish APK downloads only (no server discovery assets)
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+        run: |
+          gh release create "continuum-android-1.0-beta-${GITHUB_RUN_NUMBER}" release/* --target "$GITHUB_SHA" --prerelease --title 'Continuum 1.0 OPEN BETA — Android app, servers not activated' --notes 'Android app build with ten-slot discovery, automatic measured selection and server list. APK and emulator tests gate this download; ten public servers are NOT activated by this workflow and live ten-exit acceptance remains pending. Until an operator activates the server workflows, the app will report unavailable slots. Full HTTPS measurements are not ICMP ping. No experiment deadline: server rotation continues while the operator switch remains enabled. Candidate signing may require reinstall over an older certificate. Source and notices included.'
+# Only the publish-apk job has contents:write; no job has actions:write.
+# This workflow never dispatches or enables a VPN server.
