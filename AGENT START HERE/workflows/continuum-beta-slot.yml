@@ -18,6 +18,18 @@ jobs:
       cancel-in-progress: false
     steps:
       - uses: actions/checkout@v4
+      - name: Queue one successor behind this slot (until explicitly stopped)
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          WORKFLOW_REF: ${{ github.ref_name }}
+          SLOT: ${{ inputs.slot }}
+        run: |
+          set -euo pipefail
+          case "$SLOT" in 1|2|3|4|5|6|7|8|9|10) ;; *) exit 1;; esac
+          [[ "$(gh variable get ENABLE_CONTINUUM_BETA)" == true ]]
+          printf -v workflow 'continuum-beta-%02d.yml' "$SLOT"
+          gh workflow run "$workflow" --ref "$WORKFLOW_REF"
       - name: Install pinned existing engine and connector
         run: |
           mkdir -p "$HOME/bin"
@@ -33,3 +45,6 @@ jobs:
           ENABLE_CONTINUUM_BETA: ${{ vars.ENABLE_CONTINUUM_BETA }}
           SLOT: ${{ inputs.slot }}
         run: python3 'AGENT START HERE/server/run_slot.py' --slot "$SLOT"
+      - name: Back off failed cycles before releasing the queued successor
+        if: failure()
+        run: sleep 300

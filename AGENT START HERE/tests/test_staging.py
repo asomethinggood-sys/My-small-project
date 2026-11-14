@@ -46,6 +46,10 @@ class StagingTests(unittest.TestCase):
         self.assertIn('inputs.slot', job['concurrency']['group'])
         self.assertEqual(job['concurrency']['cancel-in-progress'], 'false')
         self.assertEqual(set(doc['on']), {'workflow_call'})
+        self.assertIn('gh workflow run', job['steps'][1]['run'])
+        self.assertEqual(job['steps'][-1]['if'], 'failure()')
+        self.assertEqual(job['steps'][-1]['run'], 'sleep 300')
+        self.assertEqual(sum(step.get('run', '').count('gh workflow run') for step in job['steps']), 1)
 
     def test_document_contract(self):
         d = worker.document(1, '12345-1', 'owned-fixture.trycloudflare.com', 'f2222222-2222-4222-8222-222222222222', '/fixture', 1000, 2000)

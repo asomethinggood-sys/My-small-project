@@ -1,36 +1,31 @@
-# START HERE — Continuum 1.0 OPEN BETA handoff
+# AGENT START HERE — Continuum 1.0 OPEN BETA
 
-## Status: dormant source candidate, NOT a built or deployed beta
+## Current scope
 
-The latest instruction was **do not start workflows**. It was followed:
+**The Android APK is built. The next agent's job is server activation, not writing the app.**
 
-- No workflows were dispatched, no servers started, no release assets published, no repository variables changed, and no push was made.
-- All new work is staged inside this folder. Existing `.github/workflows`, Android production files, main, and Windows release are unchanged.
-- **No new APK exists.** This workspace has no Java, Gradle or Android SDK. Building through CI would start a workflow, which was explicitly prohibited. Do not rename or present the previous 0.7 APK as 1.0.
-- Local offline checks: 9 Python tests passed, YAML parsed, Python compiled, and the Android overlay base-hash check passed. **Java compilation, Android lint, instrumentation and real ten-server/failover tests have not run.** Fix any issues those checks find before calling this finished.
+See `BUILD-RESULTS.md` for the final APK links, exact build evidence, signing information and remaining live-server checks. The user authorized APK-build CI and build-fix reruns, but **did not authorize this agent to start any of the ten VPN servers**.
 
-Base: `9ec2af0`, branch `arena/f056ce38-my-small-project`. Stay on the branch Arena currently assigns; never silently switch branches. This folder is persisted workspace work, not a pushed deployment.
+There is **no seven-day limit, experiment end date, lease renewal or rechain flag**. After activation, each worker queues its successor and keeps rotating until `ENABLE_CONTINUUM_BETA` is explicitly set to `false`. Per-run timeouts and per-address expiration remain: these keep an individual job below the runner limit and prevent Android from using stale addresses. They do NOT end the experiment.
 
-## Files
+All ten server workflow templates remain in this folder, outside the active workflow directory. Only the APK builder was installed under `.github/workflows/continuum-beta-build.yml`. No server variables or slot assets were created/changed. Main and the existing single-server `vpn.yml` / `vpn-config/config.txt` remain untouched.
 
-| Path | Purpose |
-|---|---|
-| `workflows/continuum-beta-01.yml` … `10.yml` | Ten independent, manual-start entry workflows |
-| `workflows/continuum-beta-slot.yml` | Shared implementation with per-slot concurrency, timeout and off switch |
-| `server/run_slot.py` | Start existing Xray/Quick Tunnel path, verify readiness and geography, publish one slot, queue its successor |
-| `overlay/android/…` | Full replacement/addition source files for the new Android app |
-| `overlay-base.json` | Original-file hashes to prevent overwriting later work |
-| `apply_overlay.py` | Dry-run by default; `--apply` installs Android files only, never workflows |
-| `workflows/continuum-beta-build.yml` | Manual APK candidate build, with NO server-start or release-publishing permissions |
-| `tests/test_staging.py` | Offline handoff safety/schema tests |
-| `ACCEPTANCE.md` | Required build, device and failover acceptance checklist |
-| `NEXT_AGENT_PROMPT.txt` | Copyable prompt for the next agent |
+## Delivered files
 
-No script in this folder executes anything merely by being opened or imported. Workflow YAML outside `.github/workflows/` is not registered with Actions.
+- `workflows/continuum-beta-01.yml` through `10.yml`: ten distinct manual-start workflows.
+- `workflows/continuum-beta-slot.yml`: common worker, one concurrency group per slot, automatic successor queue, stop switch and failure backoff.
+- `server/run_slot.py`: existing Xray + Cloudflare Quick Tunnel mechanism, readiness, US checks and isolated release publication.
+- `overlay/android/…`: complete reviewed Android replacement/addition files used to build the APK. Existing production source is not silently overwritten in the checkout.
+- `apply_overlay.py`, `overlay-base.json`: guarded source application for reproducible builds; no server-start side effects.
+- `workflows/continuum-beta-build.yml`: optional manual build-only template; the installed builder already produced the APK.
+- `ACCEPTANCE.md`, `BUILD-RESULTS.md`: honest separation between completed app tests and not-yet-run live-server checks.
+- `NEXT_AGENT_PROMPT.txt`: activation-only handoff prompt.
 
-## Architecture — same discovery mechanism, ten independent slots
+Stay on Arena's current branch. The working branch for this session is `arena/f056ce38-my-small-project`; do not switch branches, touch main, or open a PR without permission.
 
-There is no new directory server or paid VPS. The existing project release-download mechanism is used. Each slot has its own release tag, so ten publishers cannot overwrite a shared aggregate file:
+## How the ten slots work
+
+No new directory server or VPS is required. The app uses the original repository-release download approach, now with one independent tag/asset per slot:
 
 ```
 continuum-beta-01 / slot.json
@@ -39,35 +34,59 @@ continuum-beta-02 / slot.json
 continuum-beta-10 / slot.json
 ```
 
-Each asset has schema version, slot number, generation, issued/expiry times, verified `US` country and the generated TLS/WebSocket VLESS URI. Hostnames and credentials are generated at runtime; none are fabricated or prefilled. An app can ship the ten **discovery URLs**, not ten forever-valid Quick Tunnel addresses.
+Each asset contains schema, slot, generation, issue/expiry times, US country and the generated VLESS/TLS/WebSocket URI. Runtime hostnames and shared beta credentials are created by the worker; no fictional working records are bundled. The app bundles discovery URLs, not permanent Quick Tunnel addresses.
 
-The app's fixed discovery URLs use the existing repository identity. It renders only locally generated labels **US🇺🇸_01 … US🇺🇸_10**. It does not display the repository, URIs, hostnames, protocol details or custom import controls. Required distribution licenses/source remain intact. Binary inspection can still reveal implementation details.
+Ten publishers do not race over a shared aggregate manifest. Release-asset replacement can briefly produce a 404, so Android can retain an unexpired previous record, but still probes before selection.
 
-### Android behavior
+## Android behavior
 
-- Version `1.0.0-open-beta`, versionCode 100, managed `app.continuum` release. Existing debug fixture package remains isolated.
-- Auto-connect fetches the ten slots and measures full HTTPS requests through candidate profiles, with three worker threads and a bounded scan wait. Picks the fastest successful unexpired result; stable slot-number tie-break.
-- The Servers dialog lists all ten slots numerically. `Check all servers` performs real checks; `Connect` saves a preferred slot and goes through normal Android VPN permission. Initially entries are **Not checked**, not fabricated ping values.
-- Preferred slot wins when reachable. If unavailable, the best measured alternative is used. Preference is not a hard geographic lock; all advertised slots must be US-verified.
-- “Latency” is an HTTPS request, **not ICMP ping**. There is no claim of sub-200 ms or Tehran performance.
-- While connected, discovery refresh is scheduled about 30 seconds **after the previous check completes**. Slow network calls, Android power management, or a bounded scan can make the real interval longer. Ten asset reads per refresh per user has a real bandwidth/rate cost; load-test before public promotion.
-- A healthy active connection is retained even when another slot becomes faster or a replacement URI appears. Three failed checks trigger reselection; explicit selection/compatibility changes can switch immediately. An expiring active slot is reselected, with an expiry watchdog that stops payload while retaining TUN if needed.
-- Disconnect invalidates the session token, cancels retries and uses the existing service stop watchdog. Delayed probes must not reinstall a disconnected tunnel.
-- Empty/expired/unreachable pools show unavailable and retry; they do not silently fall back to the old single-server subscription or fabricate a connection.
+- Managed `app.continuum`, versionCode **100**, versionName **1.0.0-open-beta**.
+- Auto-connect fetches the ten records and measures HTTPS through candidate profiles, with three worker threads and a bounded scan wait. It selects the fastest successful unexpired result, with stable slot-number tie-breaks.
+- The Servers dialog lists **US🇺🇸_01 … US🇺🇸_10**, numerically. `Check all servers` performs real checks. `Connect` saves a preferred slot and uses normal Android VPN permission. Initially entries say **Not checked**, not fake ping values.
+- A preferred slot is used when reachable. If it fails, the best measured alternative may be used.
+- Latency is an **HTTPS request, not ICMP ping**. No Tehran or sub-200 ms guarantee.
+- While connected, discovery refresh is scheduled around 30 seconds after the previous check completes. Slow requests, native probes and Android power management can make that longer.
+- A healthy active connection is not restarted merely because another peer becomes faster or a new URI is published. Three failed checks trigger reselection. Explicit preference changes, compatibility changes and upcoming expiration can switch sooner.
+- Disconnect invalidates the session token and cancels recovery. The expiry watchdog stops expired payload while preserving TUN routing until an alternative is available.
+- No repository, URL, endpoint, protocol, custom-import control or raw error is rendered in product UI. Licenses and source notices accompany the APK. Binary/network inspection can still reveal implementation details.
+- Until the servers are activated, the app will correctly report unavailable slots; it does not secretly use the old single-server subscription.
 
-### Server rotation and limits
+## Rotation until the user stops
 
-Uses the existing pinned download scripts, `scripts/continuum_server.py`, tuning script, and full TLS/WS/VLESS readiness test. A hostname appearing in a connector log is not enough to publish.
+Each slot queues **one successor at job startup**, before binary installation and serving, like the original loop. Its concurrency group prevents that successor from serving until the current slot finishes. Thus ordinary startup/serving failures also have a queued replacement. Failed cycles wait five minutes before releasing the group, rather than retrying rapidly.
 
-Slot lifetimes are staggered, roughly 246–300 minutes, below the job's 340-minute ceiling. A healthy serving slot queues ONE successor near its end, behind its own concurrency lock. The other nine slots can carry new connections during that slot's gap. There is no seamless migration of established TCP/UDP application sessions; calls and downloads may reconnect.
+Serving lifetimes are staggered: approximately 246–300 minutes. Each job has a 340-minute ceiling. There is **no experiment-wide expiration**. Setting `ENABLE_CONTINUUM_BETA=false` prevents queued jobs from serving; running workers observe the switch around once per minute. Do not use a calendar variable to shut the experiment off.
 
-This is **not an unlimited unattended loop**. Rotation is gated by an explicit renewable experiment lease of at most seven days, a global off switch, and a separate rechain switch. Renew the lease deliberately if continuing the experiment. No schedule or watchdog silently resurrects disabled slots. Early startup failures, process death, US-geography-check failure, exhausted quota or denied dispatch stop that slot and require operator attention. This fail-closed behavior is intentional; do not add an unbounded 403 retry storm.
+A rejected successor dispatch, unavailable runner, exhausted quota or platform suspension can still break a chain. There is no way to promise perpetual platform availability or preserve established TCP sessions across a server's disappearance. Do not repeatedly retry an authorization-denied dispatch or silently introduce another credential.
 
-The user reports GitHub support approved the experiment and US hosting. Do not repeat the already answered “where will it run?” question. Nonetheless, runner labels alone do not attest an actual exit country: each worker requires two independent country checks to agree on US before publishing. Those external checks may fail/rate-limit; never relabel a foreign/unverified exit US to make a test green.
+The user reports support approval and US hosting. Do not repeat the already answered hosting question. Actual US egress is still checked independently by two country services before publication; unverified/foreign slots are not advertised as US. External checks can themselves fail/rate-limit.
 
-## Safe next steps (READ before running)
+## Next agent: activation only
 
-### 1. Offline review — no workflows needed
+Do not rebuild/redesign the completed APK just to start the servers. Follow these steps **when the user authorizes you to activate them**:
+
+1. Read `BUILD-RESULTS.md` and the activation portions of `ACCEPTANCE.md`.
+2. Confirm the current branch and available concurrency/billing budget. Ten simultaneous workers use roughly **14,400 runner-minutes/day**, excluding builds. Do not buy infrastructure or override account controls.
+3. Keep `ENABLE_CONTINUUM_BETA=false` while installing the ten wrapper templates and `continuum-beta-slot.yml` into `.github/workflows/`. Do not install another APK builder or overwrite the legacy `vpn.yml`. Retain this folder and the existing shared scripts, which the worker calls.
+4. Commit/push only the current branch when authorized. New workflow-dispatch files may need default-branch registration before GitHub will run them by filename. If blocked, explain that specific registration issue and obtain permission for the appropriate default-branch/PR action; do not bypass the standing main/no-PR restriction or repeatedly retry a 403/404.
+5. Confirm the workflow token can read the stop-switch variable, upload release assets and dispatch a successor. Permissions are `contents:write` and `actions:write`; platform/account restrictions can still deny access. Never request credentials in chat.
+6. Set **only** `ENABLE_CONTINUUM_BETA=true`. There is no expiry or rechain variable to set.
+7. Start slot 01 on the actual current branch: `gh workflow run continuum-beta-01.yml --ref <CURRENT_BRANCH>`. Verify its real readiness/publication, then start 02…10. Do not claim ten live exits merely because ten YAML files exist.
+8. Check each actual run and slot asset, and verify the built app can select/connect. Observe one rotation and an intentional failure to establish live failover evidence. This is deployment verification, not a request to rewrite the app. Never report seamless calls/downloads across replacement.
+
+If GitHub rejects dispatch because of registration/permissions, do not invent successful server status. That platform blocker must be resolved before activation can be completed.
+
+### Explicit stop
+
+Set `ENABLE_CONTINUUM_BETA=false` **first**, then list and cancel only the actual ten workers' running/pending run IDs. Merely cancelling one job while the switch remains true can let its already-queued successor start. Leave the legacy VPN and unrelated app builds alone.
+
+Normal worker shutdown retires its asset. Forced termination can leave a published address until its hard per-run expiry; Android's probes/expiry checks reject stale connectivity. Remove/expire beta slot assets if needed. None of this changes `vpn-config/config.txt`.
+
+## Rebuild reference (not required for activation)
+
+The installed build-only workflow applies the overlay in CI, builds ARM64 and universal APKs, runs tests, audits packaging and publishes app assets only. It has no server-dispatch permission. The original local attempt installed Java, but this sandbox blocked downloads from Google/Gradle/Rust hosts, so the user explicitly approved build-only CI.
+
+Offline checks:
 
 ```sh
 python3 'AGENT START HERE/apply_overlay.py'
@@ -76,54 +95,10 @@ python3 -m venv .venv
 .venv/bin/python -m unittest discover -s 'AGENT START HERE/tests' -v
 ```
 
-Review all source changes, especially lifecycle races, native probe cancellation, the generation/expiry boundary and release settings. The UI and service each have their own bounded process-local probe pool; do not expand concurrency casually.
+`apply_overlay.py` is dry-run by default; `--apply` writes only base-hash-checked Android files. It never installs workflows or starts servers.
 
-### 2. Build an APK only after build permission / in an equipped local environment
+## Shared beta access and signing
 
-Applying the overlay changes Android sources, not workflows:
+Public slot assets intentionally expose a shared access credential, like the original subscription. UI hiding does not make it private or stop redistribution. Do not put personal/private keys in these records or log the URIs. Assess abuse/rate controls before wide promotion.
 
-```sh
-python3 'AGENT START HERE/apply_overlay.py' --apply
-```
-
-Local requirements: JDK 21, Gradle 8.11.1, Android API/build-tools 35, NDK 27.2.12479018, pinned Rust toolchain supplied by the existing build scripts, and the checksum-verified native AAR. Existing build scripts download missing dependencies. Then, from repo root:
-
-```sh
-bash android/scripts/fetch-core.sh
-cd android
-ORG_GRADLE_PROJECT_continuumManaged=true gradle --no-daemon -PtargetAbi=x86_64 :app:testDebugUnitTest :app:lintDebug
-ORG_GRADLE_PROJECT_continuumManaged=true gradle --no-daemon -PtargetAbi=arm64-v8a :app:assembleRelease :app:lintRelease
-# Copy/hash ARM64 output before the next build overwrites it.
-ORG_GRADLE_PROJECT_continuumManaged=true gradle --no-daemon -PtargetAbi=universal :app:assembleRelease
-```
-
-Provision the existing stable signing secrets privately; never paste keys/tokens into chat. A new candidate signer can require uninstalling the old app and losing settings. Do not present candidate signing as a reliable upgrade path.
-
-Alternatively, AFTER permission to run an APK build, install **only** `workflows/continuum-beta-build.yml` into `.github/workflows/`. Commit/push ONLY the current session branch when authorized. That workflow applies the overlay itself, builds/tests candidates, and uploads artifacts. It cannot start the ten servers or publish a public beta release. Upload is labelled **NOT YET ACCEPTED** until the checklist passes.
-
-New `workflow_dispatch` files often need registration on the default branch before GitHub will dispatch them by filename, even with `--ref`. Do not circumvent the standing main/no-PR restriction or guess that a branch push is sufficient. If registration is required, explain the blocker and obtain explicit authorization for the appropriate PR/default-branch change in a future authorized session. Do not repeatedly retry a 403/404.
-
-### 3. Deploy the ten workers only after explicit activation authorization
-
-Do not do this under the current no-start instruction. Once authorized:
-
-1. Confirm support/billing scope, repository public/private behavior, available job concurrency and action-minute budget. Ten concurrent workers consume roughly **14,400 runner-minutes per day** before build time. Quotas and platform availability can prevent ten simultaneous slots.
-2. Install the ten wrapper YAML files plus `continuum-beta-slot.yml` into `.github/workflows/`. Keep `ENABLE_CONTINUUM_BETA=false` during installation. Never replace the old `vpn.yml` or its `vpn-config/config.txt` asset.
-3. Configure repository variables (not secret values in chat):
-   - `ENABLE_CONTINUUM_BETA=true` only when ready to start.
-   - `CONTINUUM_BETA_RECHAIN=false` for initial one-cycle acceptance; set `true` only after rotation tests pass.
-   - `CONTINUUM_BETA_EXPIRES_AT=<UTC Unix seconds>`: explicit deadline 10 minutes to seven days ahead; use a short initial trial. Normal four-to-five-hour rotation needs a deadline long enough to test it.
-4. Confirm the job token can read the kill-switch variables, upload release assets, and dispatch its successor. Workflow token uses only `contents:write` and `actions:write`; access restrictions may still block these operations. The worker fails closed on missing capability.
-5. Start a single slot first, inspect only safe status, confirm its published schema/expiry and real Android connection. Then start the other nine once that works. Do not claim ten live servers from ten YAML files.
-6. To dispatch a specific reviewed file after authorization: `gh workflow run continuum-beta-01.yml --ref <CURRENT_SESSION_BRANCH>`. Repeat with 02…10 only after acceptance. Read the actual current branch with `git branch --show-current`; do not invent a branch/ref or switch branches.
-7. Test intentional shutdown and normal successor replacement before enabling rechain. Ten quick tunnels provide redundancy, not a 24/7 SLA, load balancing across established calls, or preservation of an old TCP session.
-
-### Stop / rollback
-
-First set `ENABLE_CONTINUUM_BETA=false` and `CONTINUUM_BETA_RECHAIN=false`; running workers check the off switch about once per minute. List the ten workflows' actual run IDs and cancel only their running/pending jobs. Do not cancel the unrelated legacy VPN or desktop/mobile build runs. If needed, remove/expire the ten beta slot assets. Worker cleanup attempts retirement; forced cancellation may leave an asset until its hard expiry, so clients still probe and reject stale entries.
-
-Leave `vpn-config/config.txt` untouched. Reverting the Android overlay or reinstalling the original app is separate from shutting down workers. Both versions use the same managed package ID; signing and versionCode affect rollback installation.
-
-## Publication / privacy warning
-
-Like the original public subscription, these release assets expose a **shared beta access credential**. UI hiding does not make it private or prevent extraction/sharing. Do not put personal/private server keys in these records, logs or artifacts. Public open-beta abuse/rate controls are not implemented by this staged experiment; assess them before wide promotion. Preserve legal attribution assets even though technical information is absent from product screens.
+Current APK signing is a dedicated candidate certificate, not a provisioned stable release key. Installing over an older differently signed Continuum may require uninstalling first and loses local settings. Preserve distribution source/license notices.

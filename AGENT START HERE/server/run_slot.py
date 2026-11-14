@@ -122,20 +122,14 @@ def main(slot):
             gh('release', 'upload', tag, str(asset), '--clobber')
             published = True
             print(f'Slot {slot:02d} passed readiness and published. No URI logged.', flush=True)
-            queued = False
             while time.time() < end - 45:
                 if any(p.poll() is not None for p in children):
                     raise RuntimeError('Serving process stopped')
                 if not enabled():
                     raise RuntimeError('Operator disabled beta')
-                if not queued and time.time() >= end - 180:
-                    queued = True
-                    # Queue ONE successor behind this slot's concurrency lock.
-                    # No calendar cutoff. Only the operator switch stops normal
-                    # chaining; dispatch denial/quota may still interrupt it.
-                    # A 403 fails once; no hidden credential fallback.
-                    gh('workflow', 'run', f'continuum-beta-{slot:02d}.yml', '--ref', ref)
-                    print(f'Slot {slot:02d} queued one successor.', flush=True)
+                # The workflow queued one successor before installation/startup.
+                # It cannot serve until this slot releases its concurrency lock.
+                # There is no experiment-wide calendar deadline.
                 time.sleep(60)
         finally:
             if published:

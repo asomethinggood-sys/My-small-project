@@ -1,20 +1,17 @@
-Continue the staged Continuum Android 1.0 OPEN BETA project in the folder "AGENT START HERE".
+Activate the ten Continuum Android 1.0 OPEN BETA servers from "AGENT START HERE". The APK and app implementation are already built; your purpose is activation and deployment verification, NOT rebuilding or redesigning the app.
 
-FIRST read README.md, ACCEPTANCE.md, apply_overlay.py, the staged server worker/workflows and Android overlay. Do not ask me again where the exits run: this experiment uses the existing GitHub-hosted Xray + Cloudflare Quick Tunnel mechanism, with ten independent slots. I reported support approval, but still respect quotas, explicit budgets and the off switch.
+First read README.md, BUILD-RESULTS.md and the server-activation items in ACCEPTANCE.md. Use only the current branch assigned by Arena; keep main unchanged and do not create a PR unless I explicitly permit it.
 
-CURRENT AUTHORIZATION: DO NOT START WORKFLOWS OR SERVERS. Do not dispatch, enable repository variables, upload connection assets, install active workflow YAML, or push changes that trigger CI until I explicitly authorize those actions. A build-only workflow is still a workflow and needs authorization unless you can build locally. Keep main unchanged, use only the branch Arena currently assigns, and do not create a PR without permission.
+Hosting is already specified: ten GitHub-hosted workers using the existing Xray + Cloudflare Quick Tunnel setup. I reported support approval. Do not ask again where the servers run, buy a VPS, or create a new directory service.
 
-The prior agent created dormant source, not a completed beta. Nine offline Python tests passed. No Java/Android build, APK, live ten-server test or failover acceptance exists yet. The workspace had no Java/Gradle/Android SDK. Do not claim the old 0.7 APK is the new version.
+When I authorize activation:
+1. Install workflows/continuum-beta-01.yml through continuum-beta-10.yml plus continuum-beta-slot.yml into .github/workflows. Keep ENABLE_CONTINUUM_BETA=false until ready. Preserve the existing legacy vpn.yml and vpn-config/config.txt.
+2. Ensure the installed workflows can be dispatched on the current branch. If GitHub requires default-branch registration, explain that exact blocker and get permission rather than modifying main or repeatedly retrying denied calls.
+3. Check runner concurrency/billing and workflow-token access to variable reads, release uploads and successor dispatch. Never request tokens/passwords in chat.
+4. Set ENABLE_CONTINUUM_BETA=true. There is NO seven-day cap, end-date, lease renewal or rechain setting. The workers queue successors and rotate until I explicitly stop them. Per-address expiration and per-run timeouts must remain because individual server addresses are temporary.
+5. Start slot 01, verify actual TLS/WebSocket/VLESS readiness and its slot.json, then start 02 through 10. Confirm actual US egress rather than assuming a runner label proves it. Report actual run IDs/status without publishing connection credentials in chat.
+6. Verify the already-built app's auto-selection and manual server list against the running pool. Observe rotation/failure behavior and report any real defect honestly. Do not claim every existing call or download survives server replacement.
 
-Review and finish these requirements:
-- Ten independent slot workflows with fixed app labels US🇺🇸_01 through US🇺🇸_10; verify actual US exits before publishing.
-- Reuse the existing release-download discovery approach, with one slot.json asset per continuum-beta-01..10 tag. Do not add a separate directory server or overwrite vpn-config/config.txt.
-- The app includes discovery addresses, not fabricated live servers. Fetch/validate expiry and generation, measure real HTTPS-through-profile latency for all available candidates, choose the best, and offer a Servers dialog with manual preferred selection and checks. Do not call HTTPS timing ICMP ping.
-- No repository, endpoint, protocol, raw error or custom-import details in product UI. Preserve legal source/license notices in distributions.
-- Keep healthy active sessions stable; fail over on failures/expiry. Disconnect must cancel future recovery and reject late probe/install results. No seamless-call or 24/7 guarantee.
-- Normal rotation uses a renewable, maximum-seven-day experiment lease, a global off switch and a separate rechain switch. It is not an unbounded unattended forever loop. Early failures stop for operator attention. Do not remove safeguards or repeatedly retry denied dispatches.
-- Build managed app.continuum versionCode 100 / 1.0.0-open-beta, ARM64 and universal candidates, with stable private signing where provisioned. Report actual sizes/hashes. Do not request credentials in chat.
+To stop: set ENABLE_CONTINUUM_BETA=false FIRST, then cancel only the ten workers' running/pending runs. While the switch is true, cancellation of one job may allow its queued successor to begin. Do not stop the unrelated legacy service.
 
-Start with the offline tests and dry-run overlay validator. If a local Android toolchain is available, build and run all acceptance checks there without starting Actions. Otherwise clearly report the need for permission for the supplied manual build-only workflow. New workflow_dispatch files may need default-branch registration; do not bypass main/no-PR restrictions to solve that.
-
-When I separately authorize activation, verify one slot first, then the other nine, then normal rotation and deliberate failure. The build workflow must not start servers. Record real tests and outstanding limits in ACCEPTANCE.md before publishing the APK. Prefer write_file/edit_file for implementation. Do not stop at a claim that files exist: distinguish source review, compilation, APK delivery, live serving and failover evidence.
+The app reads ten independent release assets, displays only US🇺🇸_01 ... US🇺🇸_10, and measures full HTTPS latency—not ICMP ping. Until activation it correctly reports unavailable servers. Do not invent server data, latency, deployment success or private credentials. No experiment-wide deadline should be reintroduced.
