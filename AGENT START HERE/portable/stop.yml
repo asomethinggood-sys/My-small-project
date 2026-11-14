@@ -1,0 +1,20 @@
+name: Stop beta
+on: workflow_dispatch
+permissions:
+  contents: write
+  actions: write
+jobs:
+  stop:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    concurrency:
+      group: continuum-control
+      cancel-in-progress: false
+    steps:
+      - uses: actions/checkout@v4
+      - name: Stop this generation and cancel beta workers
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          CONTROL_GENERATION: stopped-${{ github.run_id }}-${{ github.run_attempt }}
+        run: python3 portable/control.py stop

@@ -1,0 +1,44 @@
+name: Start beta
+on: workflow_dispatch
+permissions:
+  contents: write
+  actions: write
+concurrency:
+  group: continuum-start
+  cancel-in-progress: false
+jobs:
+  prepare:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    concurrency:
+      group: continuum-control
+      cancel-in-progress: false
+    steps:
+      - uses: actions/checkout@v4
+      - name: Verify destination and reserve this start (servers stay off)
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          WORKFLOW_REF: ${{ github.ref_name }}
+          CONTROL_GENERATION: ${{ github.run_id }}-${{ github.run_attempt }}
+        run: python3 portable/control.py begin
+  build-app:
+    needs: prepare
+    uses: ./.github/workflows/continuum-beta-build.yml
+    secrets: inherit
+  activate:
+    needs: build-app
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    concurrency:
+      group: continuum-control
+      cancel-in-progress: false
+    steps:
+      - uses: actions/checkout@v4
+      - name: Activate and dispatch all ten prepared workers
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          WORKFLOW_REF: ${{ github.ref_name }}
+          CONTROL_GENERATION: ${{ github.run_id }}-${{ github.run_attempt }}
+        run: python3 portable/control.py activate

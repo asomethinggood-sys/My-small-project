@@ -1,0 +1,51 @@
+name: Portable repository build check (NO servers)
+on:
+  push:
+    branches: [arena/f056ce38-my-small-project]
+    paths:
+      - 'AGENT START HERE/portable/**'
+      - '.github/workflows/continuum-portable-check.yml'
+permissions:
+  contents: read
+jobs:
+  verify:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+      - name: Test exporter and mocked control state (no dispatch)
+        run: |
+          python3 -m pip install PyYAML==6.0.3
+          python3 -m unittest discover -s 'AGENT START HERE/portable' -p 'test_*.py' -v
+          python3 'AGENT START HERE/portable/export.py' --output "$RUNNER_TEMP/portable"
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '21'
+      - uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '8.11.1'
+      - name: Compile exported destination-bound app, not a deployment
+        run: |
+          set -o pipefail
+          "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" 'platforms;android-35' 'build-tools;35.0.0'
+          cd "$RUNNER_TEMP/portable"
+          bash android/scripts/fetch-core.sh
+          cd android
+          GITHUB_REPOSITORY=portable-fixture/example ORG_GRADLE_PROJECT_continuumManaged=true gradle --no-daemon -PtargetAbi=arm64-v8a :app:testDebugUnitTest :app:lintDebug :app:assembleRelease :app:lintRelease 2>&1 | tee build-log.txt
+          # The test APK deliberately points to a fixture identity. Never publish it.
+      - name: Failure diagnostics
+        if: failure()
+        run: |
+          if [ -d "$RUNNER_TEMP/portable" ]; then
+            cd "$RUNNER_TEMP/portable"
+            python3 android/scripts/ci-diagnostics.py
+          fi
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: portable-build-validation-NO-APK
+          path: |
+            ${{ runner.temp }}/portable/android/app/build/reports/
+            ${{ runner.temp }}/portable/android/build-log.txt
+# No Start beta invocation, no credentials beyond a read-only token, no server jobs.
