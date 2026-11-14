@@ -251,7 +251,9 @@ public final class TunnelService extends VpnService {
                 long delay=activeProbe(token);failures=0;
                 // Refresh discovery without disrupting a healthy active call.
                 betaPool.refresh(entry->-1,false);
-                if(gate.accepts(token))publish(token,"Connected",BetaCatalog.label(betaActive.slot),delay,30);
+                if(!gate.accepts(token))return;
+                if(!coreRunning||active==null||betaActive==null||betaActive.expires<=System.currentTimeMillis()/1000)throw new IllegalStateException("Active slot expired during discovery");
+                publish(token,"Connected",BetaCatalog.label(betaActive.slot),delay,30);
                 return;
             }catch(Exception error){if(failures<2)throw error;}
         }

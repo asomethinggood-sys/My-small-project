@@ -78,6 +78,11 @@ jobs:
           bash android/scripts/emulator-session.sh 2>&1 | tee android/emulator-boot.log
       - name: Include actual overlaid source and licenses
         run: |
+          grep -q 'Servers' android/release/UI-RELEASE.xml
+          "$ANDROID_HOME/build-tools/35.0.0/aapt" dump badging android/release/continuum-1.0.0-open-beta-arm64.apk > android/release/MANIFEST.txt
+          grep -q "name='app.continuum' versionCode='100' versionName='1.0.0-open-beta'" android/release/MANIFEST.txt
+          rm -f android/release/nyx-home.png android/release/nyx-locations.png
+          cp android/third-party/libv2ray-sources.jar android/release/
           cp android/THIRD_PARTY.md android/LICENSE* android/release/
           tar --exclude=android/release --exclude=android/.gradle --exclude='*/build' --exclude='*/target' --exclude=android/app/libs --exclude=android/third-party -czf android/release/continuum-beta-source.tar.gz android
           printf '%s\n' 'Candidate only. Ten-server end-to-end/failover and physical-device acceptance are not implied by this build.' > android/release/ACCEPTANCE.txt

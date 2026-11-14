@@ -18,7 +18,7 @@ public final class BetaServerDialog {
     private static final AtomicBoolean busy=new AtomicBoolean();
     private static boolean initialized;
     private BetaServerDialog(){}
-    public static void show(Activity activity,SettingsStore store,Runnable connect){
+    public static AlertDialog show(Activity activity,SettingsStore store,Runnable connect){
         LinearLayout content=new LinearLayout(activity);content.setOrientation(LinearLayout.VERTICAL);int pad=(int)(20*activity.getResources().getDisplayMetrics().density);content.setPadding(pad,pad,pad,pad);
         TextView intro=new TextView(activity);intro.setText("OPEN BETA · Choose automatically or pick a preferred server. If it fails, another available server may be used. Switching can interrupt calls.\n\nLatency is a full HTTPS request, not ICMP ping.");content.addView(intro);
         TextView selected=new TextView(activity);int preference=store.load().optInt("betaSlot",0);selected.setText(preference==0?"Preferred: Automatic":"Preferred: "+BetaCatalog.label(preference));content.addView(selected);
@@ -58,6 +58,6 @@ public final class BetaServerDialog {
                     check.setText("Check all servers");check.setEnabled(true);
                 });
             });
-        });dialog.show();
+        });dialog.show();return dialog;
     }
 }
